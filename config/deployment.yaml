@@ -10,14 +10,21 @@ metadata:
   name: ycm-webhook-role
 rules:
   - apiGroups:
-      - policy
-    apiVersions:
-      - v1beta1
+      - policy/v1beta1
     resources:
       - pods/eviction
     verbs:
       - create
       - update
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - update
+      - patch
+      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -50,7 +57,7 @@ kind: Deployment
 metadata:
   labels:
     app: ycm-webhook
-  name: ycm-kubernetes-webhook
+  name: ycm-webhook
   namespace: kube-system
 spec:
   replicas: 1
@@ -91,17 +98,21 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  name: "ycm-webhook-configuration"
+  name: ycm-webhook-configuration
 webhooks:
-  - name: "ycm-validating-webhook"
+  - name: ycm-eviction-validating.openyurt.io
     namespaceSelector:
       matchLabels:
         admission-webhook: enabled
     rules:
-      - apiGroups: ["policy"]
-        apiVersions: ["v1beta1"]
-        operations: ["CREATE"]
-        resources: ["pods/eviction"]
+      - apiGroups:
+          - policy
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+        resources:
+          - pods/eviction
         scope: "*"
     clientConfig:
       service:
@@ -110,6 +121,33 @@ webhooks:
         path: /ycm-validate-evictions
         port: 443
       caBundle: Cg==
-    admissionReviewVersions: ["v1"]
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    timeoutSeconds: 2
+  - name: ycm-pod-validating.openyurt.io
+    namespaceSelector:
+      matchLabels:
+        admission-webhook: enabled
+    rules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+          - DELETE
+        resources:
+          - pods
+    clientConfig:
+      service:
+        namespace: kube-system
+        name: ycm-webhook
+        path: /ycm-validate-pods
+        port: 443
+      caBundle: Cg==
+    admissionReviewVersions:
+      - v1
     sideEffects: None
     timeoutSeconds: 2

@@ -19,6 +19,27 @@ type Admiss struct {
 	Request *admissionv1.AdmissionRequest
 }
 
+func (a Admiss) ValidatePodReview() (*admissionv1.AdmissionReview, error) {
+	pod, err := a.Pod()
+	if err != nil {
+		e := fmt.Sprintf("could not parse pod in admission review request: %v", err)
+		return reviewResponse(a.Request.UID, false, http.StatusBadRequest, e), err
+	}
+
+	v := NewValidator()
+	val, err := v.ValidatePod(pod)
+	if err != nil {
+		e := fmt.Sprintf("could not validate pod: %v", err)
+		return reviewResponse(a.Request.UID, false, http.StatusBadRequest, e), err
+	}
+
+	if !val.Valid {
+		return reviewResponse(a.Request.UID, false, http.StatusForbidden, val.Reason), nil
+	}
+
+	return reviewResponse(a.Request.UID, false, http.StatusAccepted, "always invalid pod"), nil
+}
+
 func (a Admiss) ValidateEvictionReview() (*admissionv1.AdmissionReview, error) {
 	evic, err := a.Eviction()
 	if err != nil {
@@ -29,7 +50,7 @@ func (a Admiss) ValidateEvictionReview() (*admissionv1.AdmissionReview, error) {
 	v := NewValidator()
 	val, err := v.ValidateEviction(evic)
 	if err != nil {
-		e := fmt.Sprintf("could not validate pod: %v", err)
+		e := fmt.Sprintf("could not validate eviction: %v", err)
 		return reviewResponse(a.Request.UID, false, http.StatusBadRequest, e), err
 	}
 
@@ -37,7 +58,7 @@ func (a Admiss) ValidateEvictionReview() (*admissionv1.AdmissionReview, error) {
 		return reviewResponse(a.Request.UID, false, http.StatusForbidden, val.Reason), nil
 	}
 
-	return reviewResponse(a.Request.UID, true, http.StatusAccepted, "valid pod"), nil
+	return reviewResponse(a.Request.UID, true, http.StatusAccepted, "valid eviction"), nil
 }
 
 // extracts pod from admission request
@@ -157,8 +178,9 @@ func reviewResponse(uid types.UID, allowed bool, httpCode int32,
 }
 
 func Register() {
-	http.HandleFunc("/yurt-validate-evictions", ServeValidateEvictions)
-	http.HandleFunc("/yurt-webhook-health", ServeHealth)
+	http.HandleFunc("/ycm-validate-evictions", ServeValidateEvictions)
+	http.HandleFunc("/ycm-validate-pods", ServeValidatePods)
+	http.HandleFunc("/ycm-webhook-health", ServeHealth)
 
 	if os.Getenv("TLS") == "true" {
 		cert := "/etc/ycm-webhook/tls/tls.crt"
@@ -194,6 +216,45 @@ func ServeValidateEvictions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := adm.ValidateEvictionReview()
+
+	if err != nil {
+		e := fmt.Sprintf("could not generate admission response: %v", err)
+		klog.Error(e)
+		http.Error(w, e, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	jout, err := json.Marshal(out)
+	if err != nil {
+		e := fmt.Sprintf("could not parse admission response: %v", err)
+		klog.Error(e)
+		http.Error(w, e, http.StatusInternalServerError)
+		return
+	}
+
+	klog.Info("sending response")
+	klog.Infof("%s", jout)
+	fmt.Fprintf(w, "%s", jout)
+}
+
+// ServeValidatePods validates an admission request and then writes an admission
+func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
+	klog.Info("uri", r.RequestURI)
+	klog.Info("received validation request")
+
+	in, err := parseRequest(*r)
+	if err != nil {
+		klog.Error(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	adm := Admiss{
+		Request: in.Request,
+	}
+
+	out, err := adm.ValidatePodReview()
 
 	if err != nil {
 		e := fmt.Sprintf("could not generate admission response: %v", err)
