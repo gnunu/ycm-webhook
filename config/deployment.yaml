@@ -101,9 +101,6 @@ metadata:
   name: ycm-webhook-configuration
 webhooks:
   - name: ycm-eviction-validating.openyurt.io
-    namespaceSelector:
-      matchLabels:
-        admission-webhook: enabled
     rules:
       - apiGroups:
           - policy
@@ -124,11 +121,8 @@ webhooks:
     admissionReviewVersions:
       - v1
     sideEffects: None
-    timeoutSeconds: 2
+    timeoutSeconds: 10
   - name: ycm-pod-validating.openyurt.io
-    namespaceSelector:
-      matchLabels:
-        admission-webhook: enabled
     rules:
       - apiGroups:
           - ""
@@ -150,4 +144,4 @@ webhooks:
     admissionReviewVersions:
       - v1
     sideEffects: None
-    timeoutSeconds: 2
+    timeoutSeconds: 10
