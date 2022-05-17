@@ -10,13 +10,6 @@ metadata:
   name: ycm-webhook-role
 rules:
   - apiGroups:
-      - policy/v1beta1
-    resources:
-      - pods/eviction
-    verbs:
-      - create
-      - update
-  - apiGroups:
       - ""
     resources:
       - pods
@@ -94,34 +87,23 @@ spec:
           secret:
             secretName: ycm-webhook-tls
       serviceAccountName: ycm-webhook
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: Exists
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: ycm-webhook-configuration
 webhooks:
-  - name: ycm-eviction-validating.openyurt.io
-    rules:
-      - apiGroups:
-          - policy
-        apiVersions:
-          - v1beta1
-        operations:
-          - CREATE
-        resources:
-          - pods/eviction
-        scope: "*"
-    clientConfig:
-      service:
-        namespace: kube-system
-        name: ycm-webhook
-        path: /ycm-validate-evictions
-        port: 443
-      caBundle: Cg==
-    admissionReviewVersions:
-      - v1
-    sideEffects: None
-    timeoutSeconds: 10
   - name: ycm-pod-validating.openyurt.io
     rules:
       - apiGroups:
