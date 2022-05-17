@@ -20,6 +20,11 @@ push: image
 	@echo "\n📦 Pushing ycm-webhook image into Kind's Docker daemon..."
 	docker push ${DOCKER_IMG}
 
+.PHONY: deploy-secret
+deploy-secret:
+	@echo "\n⚙️  Deploying secret ..."
+	./webhook-create-signed-cert.sh --service ycm-webhook --namespace kube-system --secret ycm-webhook-tls
+
 .PHONY: deploy-config
 deploy-config:
 	@echo "\n⚙️  Applying cluster config..."

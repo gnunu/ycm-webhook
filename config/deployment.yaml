@@ -72,7 +72,7 @@ spec:
       containers:
         - image: aibox03.bj.intel.com:5000/ycm-webhook:latest
           imagePullPolicy: IfNotPresent
-          name: simple-webhook
+          name: ycm-webhook
           env:
             - name: TLS
               value: "true"
