@@ -37,7 +37,7 @@ func (a Admiss) ValidatePodReview() (*admissionv1.AdmissionReview, error) {
 		return reviewResponse(a.Request.UID, false, http.StatusForbidden, val.Reason), nil
 	}
 
-	return reviewResponse(a.Request.UID, false, http.StatusAccepted, "always invalid pod"), nil
+	return reviewResponse(a.Request.UID, true, http.StatusAccepted, "valid pod"), nil
 }
 
 func (a Admiss) ValidateEvictionReview() (*admissionv1.AdmissionReview, error) {
