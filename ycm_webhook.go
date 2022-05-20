@@ -2,22 +2,30 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
 
-type Context struct {
-	clientset kubernetes.Interface
-}
+const (
+	AnnotationKeyNodeAutonomy string = "node.beta.openyurt.io/autonomy" // nodeutil.AnnotationKeyNodeAutonomy
+)
+
+var (
+	clientset *kubernetes.Clientset
+)
 
 type validation struct {
 	Valid  bool
@@ -30,20 +38,53 @@ type PodValidator struct {
 	node    *corev1.Node
 }
 
-func (pv PodValidator) getNode() (*corev1.Node, error) {
-	return nil, nil
+// extracts pod from admission request
+func (pv PodValidator) getPod() error {
+	if pv.request.Kind.Kind != "Pod" {
+		return fmt.Errorf("only pods are supported here")
+	}
+
+	p := &corev1.Pod{}
+	if err := json.Unmarshal(pv.request.Object.Raw, p); err != nil {
+		return err
+	}
+
+	pv.pod = p
+	return nil
+}
+
+func (pv PodValidator) nodeInAutonomy() bool {
+	if pv.node.Annotations != nil && pv.node.Annotations[AnnotationKeyNodeAutonomy] == "true" {
+		return true
+	}
+	return false
+}
+
+func (pv PodValidator) userIsNodeController() bool {
+	return strings.Contains(pv.request.UserInfo.Username, "system:serviceaccount:kube-system:node-controller")
+}
+
+func (pv PodValidator) getNode() error {
+	nodeName := pv.pod.Spec.NodeName
+	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
+	pv.node = node
+	return err
 }
 
 func (pv PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
-	pod, err := pv.Pod()
+	err := pv.getPod()
 	if err != nil {
 		e := fmt.Sprintf("could not parse pod in admission review request: %v", err)
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, e), err
 	}
 
-	pv.pod = pod
+	err = pv.getNode()
+	if err != nil {
+		e := fmt.Sprintf("could not get node object: %s", pv.pod.Spec.NodeName)
+		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, e), err
+	}
 
-	val, err := pv.Validate()
+	val, err := pv.validate()
 
 	if err != nil {
 		e := fmt.Sprintf("could not validate pod: %v", err)
@@ -57,32 +98,13 @@ func (pv PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 	return reviewResponse(pv.request.UID, true, http.StatusAccepted, val.Reason), nil
 }
 
-// extracts pod from admission request
-func (pv PodValidator) Pod() (*corev1.Pod, error) {
-	if pv.request.Kind.Kind != "Pod" {
-		return nil, fmt.Errorf("only pods are supported here")
-	}
-
-	p := corev1.Pod{}
-	if err := json.Unmarshal(pv.request.Object.Raw, &p); err != nil {
-		return nil, err
-	}
-
-	return &p, nil
-}
-
 // ValidatePod returns true if a pod is valid
-func (pv PodValidator) Validate() (validation, error) {
-	var podName string
-	if pv.pod.Name != "" {
-		podName = pv.pod.Name
-	} else {
-		if pv.pod.ObjectMeta.GenerateName != "" {
-			podName = pv.pod.ObjectMeta.GenerateName
+func (pv PodValidator) validate() (validation, error) {
+	if pv.request.Operation == admissionv1.Delete {
+		if pv.nodeInAutonomy() && pv.userIsNodeController() {
+			return validation{Valid: false, Reason: "node autonomy labeled"}, nil
 		}
 	}
-	klog.Info("pod_name", podName)
-
 	return validation{Valid: true, Reason: "valid pod"}, nil
 }
 
@@ -179,13 +201,34 @@ func parseRequest(r http.Request) (*admissionv1.AdmissionReview, error) {
 	return &a, nil
 }
 
+func rotateCertIfNecessary() error {
+	return nil
+}
+
 func Register() {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	clientset, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		klog.Fatal(err)
+	}
+
 	http.HandleFunc("/ycm-validate-pods", ServeValidatePods)
 	http.HandleFunc("/ycm-webhook-health", ServeHealth)
 
 	if os.Getenv("TLS") == "true" {
 		cert := "/etc/ycm-webhook/tls/tls.crt"
 		key := "/etc/ycm-webhook/tls/tls.key"
+
+		// rotate cert if necessary
+		err := rotateCertIfNecessary()
+		if err != nil {
+			klog.Fatal(err)
+		}
+
 		klog.Info("Listening on port 443...")
 		klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))
 	} else {
