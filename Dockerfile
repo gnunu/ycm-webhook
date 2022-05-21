@@ -9,11 +9,11 @@ COPY . /work
 
 # Build ycm-webhook
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=private \
-  go build -o bin/ycm-webhook .
+  go build -o bin/pod-validator .
 
 # ---
 FROM scratch AS run
 
-COPY --from=build /work/bin/ycm-webhook /usr/local/bin/
+COPY --from=build /work/bin/pod-validator /usr/local/bin/
 
-CMD ["ycm-webhook"]
+CMD ["pod-validator"]
