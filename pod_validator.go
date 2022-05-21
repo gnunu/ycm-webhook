@@ -9,6 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/openyurtio/pkg/webhooks/pod-validator/certs"
+	"github.com/openyurtio/pkg/webhooks/pod-validator/configuration"
+	"github.com/openyurtio/pkg/webhooks/pod-validator/secret"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +27,9 @@ const (
 )
 
 var (
-	clientset *kubernetes.Clientset
+	ValidatePath string = "/ycm-webhook-validate"
+	HealthPath   string = "/ycm-webhook-health"
+	clientset    *kubernetes.Clientset
 )
 
 type validation struct {
@@ -216,8 +221,14 @@ func Register() {
 		klog.Fatal(err)
 	}
 
-	http.HandleFunc("/ycm-validate-pods", ServeValidatePods)
-	http.HandleFunc("/ycm-webhook-health", ServeHealth)
+	certs := certs.GenerateCerts(configuration.WebhookNamespace, configuration.WebhookService)
+
+	secret.CreateSecret(clientset, certs)
+
+	configuration.CreateValidateConfiguration(clientset, &ValidatePath, certs)
+
+	http.HandleFunc(ValidatePath, ServeValidatePods)
+	http.HandleFunc(HealthPath, ServeHealth)
 
 	if os.Getenv("TLS") == "true" {
 		cert := "/etc/ycm-webhook/tls/tls.crt"

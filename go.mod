@@ -1,4 +1,4 @@
-module ycm-webhook
+module github.com/openyurtio/pkg/webhooks/pod-validator
 
 go 1.17
 
