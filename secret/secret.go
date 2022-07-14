@@ -5,6 +5,9 @@ import (
 
 	"github.com/openyurtio/pkg/webhooks/pod-validator/certs"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/configuration"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -19,9 +22,28 @@ func getNameSpace() string {
 }
 
 func CreateSecret(clientset *kubernetes.Clientset, certset *certs.Certs) {
-	secret, err := clientset.CoreV1().Secrets(getNameSpace()).Get(context.TODO(), getSecretName(), v1.GetOptions{})
+	ns := getNameSpace()
+	sn := getSecretName()
+	found := false
+	secret, err := clientset.CoreV1().Secrets(ns).Get(context.TODO(), sn, v1.GetOptions{})
 	if err != nil {
-		klog.Fatal(err)
+		if errors.IsNotFound(err) {
+			secret = &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Secret",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      sn,
+				},
+			}
+		} else if errors.IsAlreadyExists(err) {
+			found = true
+		} else {
+			klog.Error(err)
+			return
+		}
 	}
 	secret.Data = map[string][]byte{
 		certs.CAKeyName:       certset.CAKey,
@@ -30,5 +52,13 @@ func CreateSecret(clientset *kubernetes.Clientset, certset *certs.Certs) {
 		certs.ServerKeyName2:  certset.Key,
 		certs.ServerCertName:  certset.Cert,
 		certs.ServerCertName2: certset.Cert,
+	}
+	if found {
+		_, err = clientset.CoreV1().Secrets(ns).Update(context.TODO(), secret, v1.UpdateOptions{})
+	} else {
+		_, err = clientset.CoreV1().Secrets(ns).Create(context.TODO(), secret, v1.CreateOptions{})
+	}
+	if err != nil {
+		klog.Error(err)
 	}
 }
