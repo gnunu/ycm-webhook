@@ -3,7 +3,7 @@ DOCKER_IMG=aibox03.bj.intel.com:5000/ycm-webhook:latest
 .PHONY: test
 test:
 	@echo "\n🛠️  Running unit tests..."
-	go test ./...
+	go test ./... -v
 
 .PHONY: build
 build:

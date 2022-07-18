@@ -19,7 +19,7 @@ var (
 	WebhookName, _        = os.LookupEnv("VALIDATE_WEBHOOK_NAME")
 )
 
-func CreateValidateConfiguration(clientset *kubernetes.Clientset, path *string, certset *certs.Certs) {
+func generateValidateConfig(path *string, certset *certs.Certs) *admissionregistrationv1.ValidatingWebhookConfiguration {
 	fail := admissionregistrationv1.Fail
 	validateconfig := &admissionregistrationv1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
@@ -49,7 +49,11 @@ func CreateValidateConfiguration(clientset *kubernetes.Clientset, path *string, 
 			FailurePolicy: &fail,
 		}},
 	}
+	return validateconfig
+}
 
+func CreateValidateConfiguration(clientset *kubernetes.Clientset, path *string, certset *certs.Certs) {
+	validateconfig := generateValidateConfig(path, certset)
 	if _, err := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Create(context.TODO(), validateconfig, v1.CreateOptions{}); err != nil {
 		klog.Fatal(err)
 	}
