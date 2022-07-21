@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/openyurtio/pkg/webhooks/pod-validator/certs"
+	"github.com/openyurtio/pkg/webhooks/pod-validator/client"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/configuration"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/secret"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -17,8 +19,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
 
@@ -45,16 +47,13 @@ type PodValidator struct {
 
 // extracts pod from admission request
 func (pv PodValidator) getPod() error {
-	if pv.request.Kind.Kind != "Pod" {
-		return fmt.Errorf("only pods are supported here")
-	}
+	pv.pod = &corev1.Pod{}
 
-	p := &corev1.Pod{}
-	if err := json.Unmarshal(pv.request.Object.Raw, p); err != nil {
+	if err := json.Unmarshal(pv.request.OldObject.Raw, pv.pod); err != nil {
+		klog.Error(err)
 		return err
 	}
 
-	pv.pod = p
 	return nil
 }
 
@@ -77,6 +76,16 @@ func (pv PodValidator) getNode() error {
 }
 
 func (pv PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
+	if pv.request.Kind.Kind != "Pod" {
+		err := fmt.Errorf("only pods are supported here")
+		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, ""), err
+	}
+
+	if pv.request.Operation != admissionv1.Delete {
+		reason := fmt.Sprintf("Operation %v is accepted always", pv.request.Operation)
+		return reviewResponse(pv.request.UID, true, http.StatusAccepted, reason), nil
+	}
+
 	err := pv.getPod()
 	if err != nil {
 		e := fmt.Sprintf("could not parse pod in admission review request: %v", err)
@@ -210,16 +219,24 @@ func rotateCertIfNecessary() error {
 	return nil
 }
 
-func Register() {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		klog.Fatal(err)
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
 	}
+	return !info.IsDir()
+}
 
-	clientset, err = kubernetes.NewForConfig(config)
-	if err != nil {
-		klog.Fatal(err)
-	}
+func RegisterWebhook() {
+	/*
+		for {
+			fmt.Println("here")
+			time.Sleep(5 * time.Second)
+		}
+	*/
+
+	//clientset = client.GetClientFromEnv("/home/nunu/.kube/config")
+	clientset = client.GetClientFromCluster()
 
 	certs := certs.GenerateCerts(configuration.WebhookNamespace, configuration.WebhookService)
 
@@ -230,20 +247,35 @@ func Register() {
 	http.HandleFunc(ValidatePath, ServeValidatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
 
-	if os.Getenv("TLS") == "true" {
-		cert := "/etc/ycm-webhook/tls/tls.crt"
-		key := "/etc/ycm-webhook/tls/tls.key"
+	cert := "/etc/ycm-webhook/tls/tls.crt"
+	key := "/etc/ycm-webhook/tls/tls.key"
 
-		// rotate cert if necessary
-		err := rotateCertIfNecessary()
-		if err != nil {
-			klog.Fatal(err)
+	for {
+		if fileExists(cert) && fileExists(key) {
+			break
+		} else {
+			time.Sleep(time.Second)
 		}
-
-		klog.Info("Listening on port 443...")
-		klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))
-	} else {
-		klog.Info("Listening on port 8080...")
-		klog.Fatal(http.ListenAndServe(":8080", nil))
 	}
+
+	// rotate cert if necessary
+	err := rotateCertIfNecessary()
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	klog.Info("Listening on port 443...")
+	klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))
+}
+
+func RegisterInformer() {
+	// factory := informers.NewSharedInformerFactoryWithOptions(clientset, 10*time.Second, options)
+	factory := informers.NewSharedInformerFactory(clientset, 10*time.Second)
+	nodesInformer := factory.Core().V1().Nodes().Informer()
+	leaseInformer := factory.Coordination().V1().Leases().Informer()
+	stopCh := make(chan struct{})
+	go factory.Start(stopCh)
+	factory.WaitForCacheSync(stopCh)
+	fmt.Print(nodesInformer)
+	fmt.Print(leaseInformer)
 }

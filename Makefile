@@ -8,7 +8,7 @@ test:
 .PHONY: build
 build:
 	@echo "\n🔧  Building Go binaries..."
-	GOOS=linux GOARCH=amd64 go build -o bin/ycm-webhook-linux-amd64 .
+	GOOS=linux GOARCH=amd64 go build -o bin/pod-validator .
 
 .PHONY: image
 image:

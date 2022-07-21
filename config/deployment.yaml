@@ -117,8 +117,6 @@ spec:
           imagePullPolicy: Always
           name: ycm-webhook
           env:
-            - name: TLS
-              value: "true"
             - name: WEBHOOK_NAMESPACE
               value: "kube-system"
             - name: WEBHOOK_SERVICE

@@ -38,12 +38,13 @@ func CreateSecret(clientset *kubernetes.Clientset, certset *certs.Certs) {
 					Name:      sn,
 				},
 			}
-		} else if errors.IsAlreadyExists(err) {
-			found = true
 		} else {
 			klog.Error(err)
 			return
 		}
+	} else {
+		found = true
+		klog.Infof("secret %s already existed.", secret.Name)
 	}
 	secret.Data = map[string][]byte{
 		certs.CAKeyName:       certset.CAKey,

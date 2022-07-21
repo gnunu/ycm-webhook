@@ -73,7 +73,7 @@ func (c *Certs) generate(serviceNamespace, serviceName string) error {
 	if hostIP.To4() != nil {
 		altIPs = append(altIPs, hostIP.To4())
 	}
-	dnsNames := []string{serviceName, fmt.Sprintf("%s.%s", serviceName, serviceNamespace)}
+	dnsNames := []string{serviceName, fmt.Sprintf("%s.%s", serviceName, serviceNamespace), commonName}
 	cert, err := NewSignedCert(
 		cert.Config{
 			CommonName: commonName,
