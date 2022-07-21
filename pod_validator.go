@@ -46,9 +46,7 @@ type PodValidator struct {
 }
 
 // extracts pod from admission request
-func (pv PodValidator) getPod() error {
-	pv.pod = &corev1.Pod{}
-
+func (pv *PodValidator) getPod() error {
 	if err := json.Unmarshal(pv.request.OldObject.Raw, pv.pod); err != nil {
 		klog.Error(err)
 		return err
@@ -57,25 +55,26 @@ func (pv PodValidator) getPod() error {
 	return nil
 }
 
-func (pv PodValidator) nodeInAutonomy() bool {
+func (pv *PodValidator) nodeInAutonomy() bool {
 	if pv.node.Annotations != nil && pv.node.Annotations[AnnotationKeyNodeAutonomy] == "true" {
 		return true
 	}
 	return false
 }
 
-func (pv PodValidator) userIsNodeController() bool {
+func (pv *PodValidator) userIsNodeController() bool {
 	return strings.Contains(pv.request.UserInfo.Username, "system:serviceaccount:kube-system:node-controller")
 }
 
-func (pv PodValidator) getNode() error {
+func (pv *PodValidator) getNode() error {
 	nodeName := pv.pod.Spec.NodeName
+	klog.Infof("nodeName: %s", nodeName)
 	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
 	pv.node = node
 	return err
 }
 
-func (pv PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
+func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 	if pv.request.Kind.Kind != "Pod" {
 		err := fmt.Errorf("only pods are supported here")
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, ""), err
@@ -113,7 +112,7 @@ func (pv PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 }
 
 // ValidatePod returns true if a pod is valid
-func (pv PodValidator) validate() (validation, error) {
+func (pv *PodValidator) validate() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if pv.nodeInAutonomy() && pv.userIsNodeController() {
 			return validation{Valid: false, Reason: "node autonomy labeled"}, nil
@@ -158,11 +157,12 @@ func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pv := PodValidator{
+	pv := &PodValidator{
 		request: in.Request,
+		pod:     &corev1.Pod{},
 	}
 
-	klog.Info(fmt.Sprintf("%v", in.Request))
+	//klog.Info(fmt.Sprintf("%v", in.Request))
 
 	out, err := pv.ValidateReview()
 
@@ -252,8 +252,10 @@ func RegisterWebhook() {
 
 	for {
 		if fileExists(cert) && fileExists(key) {
+			klog.Info("tls key and cert ok.")
 			break
 		} else {
+			klog.Info("Wating for tls key and cert...")
 			time.Sleep(time.Second)
 		}
 	}
