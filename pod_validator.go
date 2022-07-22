@@ -13,7 +13,9 @@ import (
 	"github.com/openyurtio/pkg/webhooks/pod-validator/certs"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/client"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/configuration"
+	"github.com/openyurtio/pkg/webhooks/pod-validator/nodes"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/secret"
+	"github.com/openyurtio/pkg/webhooks/pod-validator/utils"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,13 +55,6 @@ func (pv *PodValidator) getPod() error {
 	}
 
 	return nil
-}
-
-func (pv *PodValidator) nodeInAutonomy() bool {
-	if pv.node.Annotations != nil && pv.node.Annotations[AnnotationKeyNodeAutonomy] == "true" {
-		return true
-	}
-	return false
 }
 
 func (pv *PodValidator) userIsNodeController() bool {
@@ -114,7 +109,7 @@ func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 // ValidatePod returns true if a pod is valid
 func (pv *PodValidator) validate() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
-		if pv.nodeInAutonomy() && pv.userIsNodeController() {
+		if nodes.NodeIsInAutonomy(pv.node) && pv.userIsNodeController() {
 			return validation{Valid: false, Reason: "node autonomy labeled"}, nil
 		}
 	}
@@ -227,14 +222,11 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func RegisterWebhook() {
-	/*
-		for {
-			fmt.Println("here")
-			time.Sleep(5 * time.Second)
-		}
-	*/
+const (
+	CertDir string = "/etc/ycm-webhook/tls"
+)
 
+func RegisterWebhook() {
 	//clientset = client.GetClientFromEnv("/home/nunu/.kube/config")
 	clientset = client.GetClientFromCluster()
 
@@ -247,8 +239,20 @@ func RegisterWebhook() {
 	http.HandleFunc(ValidatePath, ServeValidatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
 
-	cert := "/etc/ycm-webhook/tls/tls.crt"
-	key := "/etc/ycm-webhook/tls/tls.key"
+	err := utils.EnsureDir(CertDir)
+	if err != nil {
+		klog.Error(err)
+	}
+	cert := CertDir + "/tls.crt"
+	key := CertDir + "/tls.key"
+	err = utils.WriteFile(cert, certs.Cert)
+	if err != nil {
+		klog.Error(err)
+	}
+	err = utils.WriteFile(key, certs.Key)
+	if err != nil {
+		klog.Error(err)
+	}
 
 	for {
 		if fileExists(cert) && fileExists(key) {
@@ -261,7 +265,7 @@ func RegisterWebhook() {
 	}
 
 	// rotate cert if necessary
-	err := rotateCertIfNecessary()
+	err = rotateCertIfNecessary()
 	if err != nil {
 		klog.Fatal(err)
 	}

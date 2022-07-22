@@ -47,12 +47,10 @@ func CreateSecret(clientset *kubernetes.Clientset, certset *certs.Certs) {
 		klog.Infof("secret %s already existed.", secret.Name)
 	}
 	secret.Data = map[string][]byte{
-		certs.CAKeyName:       certset.CAKey,
-		certs.CACertName:      certset.CACert,
-		certs.ServerKeyName:   certset.Key,
-		certs.ServerKeyName2:  certset.Key,
-		certs.ServerCertName:  certset.Cert,
-		certs.ServerCertName2: certset.Cert,
+		certs.CAKeyName:      certset.CAKey,
+		certs.CACertName:     certset.CACert,
+		certs.ServerKeyName:  certset.Key,
+		certs.ServerCertName: certset.Cert,
 	}
 	if found {
 		_, err = clientset.CoreV1().Secrets(ns).Update(context.TODO(), secret, v1.UpdateOptions{})
