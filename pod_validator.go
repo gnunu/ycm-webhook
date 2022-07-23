@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -24,10 +23,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-)
-
-const (
-	AnnotationKeyNodeAutonomy string = "node.beta.openyurt.io/autonomy" // nodeutil.AnnotationKeyNodeAutonomy
 )
 
 var (
@@ -92,7 +87,7 @@ func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, e), err
 	}
 
-	val, err := pv.validate()
+	val, err := pv.validateDel()
 
 	if err != nil {
 		e := fmt.Sprintf("could not validate pod: %v", err)
@@ -107,13 +102,13 @@ func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 }
 
 // ValidatePod returns true if a pod is valid
-func (pv *PodValidator) validate() (validation, error) {
+func (pv *PodValidator) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if nodes.NodeIsInAutonomy(pv.node) && pv.userIsNodeController() {
 			return validation{Valid: false, Reason: "node autonomy labeled"}, nil
 		}
 	}
-	return validation{Valid: true, Reason: "valid pod"}, nil
+	return validation{Valid: true, Reason: "validated pod deletion"}, nil
 }
 
 func reviewResponse(uid types.UID, allowed bool, httpCode int32,
@@ -157,7 +152,8 @@ func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
 		pod:     &corev1.Pod{},
 	}
 
-	//klog.Info(fmt.Sprintf("%v", in.Request))
+	klog.Infof("name: %s, namespace: %s, operation: %s, from: %v",
+		in.Request.Name, in.Request.Namespace, in.Request.Operation, &in.Request.UserInfo)
 
 	out, err := pv.ValidateReview()
 
@@ -214,14 +210,6 @@ func rotateCertIfNecessary() error {
 	return nil
 }
 
-func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}
-
 const (
 	CertDir string = "/etc/ycm-webhook/tls"
 )
@@ -234,7 +222,7 @@ func RegisterWebhook() {
 
 	secret.CreateSecret(clientset, certs)
 
-	configuration.CreateValidateConfiguration(clientset, &ValidatePath, certs)
+	configuration.EnsureValidateConfiguration(clientset, &ValidatePath, certs)
 
 	http.HandleFunc(ValidatePath, ServeValidatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
@@ -255,7 +243,7 @@ func RegisterWebhook() {
 	}
 
 	for {
-		if fileExists(cert) && fileExists(key) {
+		if utils.FileExists(cert) && utils.FileExists(key) {
 			klog.Info("tls key and cert ok.")
 			break
 		} else {

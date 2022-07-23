@@ -63,12 +63,22 @@ func generateValidateConfig(path *string, certset *certs.Certs) *admissionregist
 	return validateconfig
 }
 
-func CreateValidateConfiguration(clientset *kubernetes.Clientset, path *string, certset *certs.Certs) {
+func EnsureValidateConfiguration(clientset *kubernetes.Clientset, path *string, certset *certs.Certs) {
 	validateconfig := generateValidateConfig(path, certset)
-	if _, err := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Create(context.TODO(), validateconfig, v1.CreateOptions{}); err != nil {
-		if errors.IsAlreadyExists(err) {
-			return
+	if _, err := clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Get(
+		context.TODO(), ValidateConfigName, v1.GetOptions{}); err != nil {
+		if errors.IsNotFound(err) {
+			klog.Infof("validatewebhookconfiguratiion %s not found, create it.", ValidateConfigName)
+			if _, err = clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Create(
+				context.TODO(), validateconfig, v1.CreateOptions{}); err != nil {
+				klog.Fatal(err)
+			}
 		}
-		klog.Fatal(err)
+	} else {
+		klog.Infof("validatewebhookconfiguratiion %s already exists, update it.", ValidateConfigName)
+		if _, err = clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Update(
+			context.TODO(), validateconfig, v1.UpdateOptions{}); err != nil {
+			klog.Fatal(err)
+		}
 	}
 }
