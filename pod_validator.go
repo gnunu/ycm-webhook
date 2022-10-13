@@ -25,6 +25,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	podaffinityannotation string = "podaffinityannotation"
+	podaffinitynode       string = "podnodeaffinity"
+	podaffinitypool       string = "podpoolaffinity"
+)
+
 var (
 	ValidatePath string = "/ycm-webhook-validate"
 	HealthPath   string = "/ycm-webhook-health"
@@ -104,8 +110,19 @@ func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 // ValidatePod returns true if a pod is valid
 func (pv *PodValidator) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
-		if nodes.NodeIsInAutonomy(pv.node) && pv.userIsNodeController() {
-			return validation{Valid: false, Reason: "node autonomy labeled"}, nil
+		if pv.userIsNodeController() {
+			if nodes.NodeIsInAutonomy(pv.node) {
+				return validation{Valid: false, Reason: "node autonomy labeled"}, nil
+			}
+			// case 1: pod has annotation of nodeaffinity
+			// return validation{Valid: false, Reason: "pod has annotation of nodeautonomy"}, nil
+
+			// case 2: pod has annotation of poolaffinity
+			// if the node has lease object proxyed
+			// return validation{Valid: false, Reason: "pod has annotatiuon of poolautonomy, and the node is alive"}, nil
+			// else if the node is really down
+			// return validation{Valid: true, Reason: "pod has annotatiuon of poolautonomy, and the node is down, allow transition"}, nil
+			// when pod is poolautonomy annotated, the pod should be updated with node affinity
 		}
 	}
 	return validation{Valid: true, Reason: "validated pod deletion"}, nil
@@ -265,11 +282,13 @@ func RegisterWebhook() {
 func RegisterInformer() {
 	// factory := informers.NewSharedInformerFactoryWithOptions(clientset, 10*time.Second, options)
 	factory := informers.NewSharedInformerFactory(clientset, 10*time.Second)
+	podsInformer := factory.Core().V1().Pods().Informer()
 	nodesInformer := factory.Core().V1().Nodes().Informer()
-	leaseInformer := factory.Coordination().V1().Leases().Informer()
+	leasesInformer := factory.Coordination().V1().Leases().Informer()
 	stopCh := make(chan struct{})
-	go factory.Start(stopCh)
+	factory.Start(stopCh)
 	factory.WaitForCacheSync(stopCh)
+	fmt.Print(podsInformer)
 	fmt.Print(nodesInformer)
-	fmt.Print(leaseInformer)
+	fmt.Print(leasesInformer)
 }
