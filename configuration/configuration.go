@@ -15,9 +15,9 @@ import (
 
 var (
 	WebhookNamespace   = getEnv("WEBHOOK_NAMESPACE", "kube-system")
-	ValidateConfigName = getEnv("WEBHOOK_CONFIGURATION", "ycm-webhook-configuration")
-	WebhookService     = getEnv("WEBHOOK_SERVICE", "ycm-webhook")
-	WebhookName        = getEnv("VALIDATE_WEBHOOK_NAME", "ycm-validating.openyurt.io")
+	ValidateConfigName = getEnv("WEBHOOK_CONFIGURATION", "pod-coordinator-webhook-configuration")
+	WebhookService     = getEnv("WEBHOOK_SERVICE", "pod-coordinator-webhook")
+	WebhookName        = getEnv("VALIDATE_WEBHOOK_NAME", "pod-coordinator-validating.openyurt.io")
 )
 
 func getEnv(key, fallback string) string {

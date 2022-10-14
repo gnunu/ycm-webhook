@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: ycm-webhook
+  name: pod-coordinator-webhook
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: ycm-webhook-role
+  name: pod-coordinator-webhook-role
 rules:
   - apiGroups:
     - ""
@@ -66,20 +66,20 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: ycm-webhook-rolebinding
+  name: pod-coordinator-webhook-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: ycm-webhook-role
+  name: pod-coordinator-webhook-role
 subjects:
 - kind: ServiceAccount
-  name: ycm-webhook
+  name: pod-coordinator-webhook
   namespace: kube-system
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ycm-webhook
+  name: pod-coordinator-webhook
   namespace: kube-system
 spec:
   ports:
@@ -87,44 +87,73 @@ spec:
     protocol: TCP
     targetPort: 443
   selector:
-    app: ycm-webhook
+    app: pod-coordinator-webhook
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ycm-webhook-certs
+  name: pod-coordinator-webhook-certs
   namespace: kube-system
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  creationTimestamp: null
+  name: pod-coordinator-validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    caBundle: Cg==
+    service:
+      name: pod-coordinator-webhook-service
+      namespace: kube-system
+      path: /pod-coordinator-webhook-validate
+  failurePolicy: Fail
+  rules:
+  - apiGroups:
+    - pod-coordinator.openyurt.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - pods
+  sideEffects: None
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: ycm-webhook
-  name: ycm-webhook
+    app: pod-coordinator-webhook
+  name: pod-coordinator-webhook
   namespace: kube-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ycm-webhook
+      app: pod-coordinator-webhook
   template:
     metadata:
       labels:
-        app: ycm-webhook
+        app: pod-coordinator-webhook
     spec:
       containers:
-        - image: aibox03.bj.intel.com:5000/ycm-webhook:latest
+        - image: aibox03.bj.intel.com:5000/pod-coordinator-webhook:latest
           imagePullPolicy: Always
-          name: ycm-webhook
+          name: pod-coordinator-webhook
           env:
             - name: WEBHOOK_NAMESPACE
               value: "kube-system"
             - name: WEBHOOK_SERVICE
-              value: "ycm-webhook"
+              value: "pod-coordinator-webhook"
             - name: WEBHOOK_CONFIGURATION
-              value: "ycm-webhook-configuration"
+              value: "pod-coordinator-webhook-configuration"
             - name: VALIDATE_WEBHOOK_NAME
-              value: "ycm-validating.openyurt.io"
+              value: "pod-coordinator-validating.openyurt.io"
           resources:
             limits:
               cpu: 100m
@@ -134,7 +163,7 @@ spec:
               memory: 20Mi
           securityContext:
             allowPrivilegeEscalation: false
-      serviceAccountName: ycm-webhook
+      serviceAccountName: pod-coordinator-webhook
       tolerations:
       - key: node-role.kubernetes.io/master
         operator: Exists

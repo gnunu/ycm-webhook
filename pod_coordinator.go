@@ -32,8 +32,8 @@ const (
 )
 
 var (
-	ValidatePath string = "/ycm-webhook-validate"
-	HealthPath   string = "/ycm-webhook-health"
+	ValidatePath string = "/pod-coordinator-webhook-validate"
+	HealthPath   string = "/pod-coordinator-webhook-health"
 	clientset    *kubernetes.Clientset
 )
 
@@ -228,7 +228,7 @@ func rotateCertIfNecessary() error {
 }
 
 const (
-	CertDir string = "/etc/ycm-webhook/tls"
+	CertDir string = "/etc/pod-coordinator-webhook/tls"
 )
 
 func RegisterWebhook() {

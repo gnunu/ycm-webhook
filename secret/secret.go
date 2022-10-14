@@ -14,7 +14,7 @@ import (
 )
 
 func getSecretName() string {
-	return "ycm-webhook-certs"
+	return "pod-coordinator-webhook-certs"
 }
 
 func getNameSpace() string {

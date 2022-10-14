@@ -1,4 +1,4 @@
-DOCKER_IMG=aibox03.bj.intel.com:5000/ycm-webhook:latest
+DOCKER_IMG=aibox03.bj.intel.com:5000/pod-coordinator-webhook:latest
 
 .PHONY: test
 test:
@@ -8,22 +8,22 @@ test:
 .PHONY: build
 build:
 	@echo "\n🔧  Building Go binaries..."
-	GOOS=linux GOARCH=amd64 go build -o bin/pod-validator .
+	GOOS=linux GOARCH=amd64 go build -o bin/pod-coordinator .
 
 .PHONY: image
 image:
-	@echo "\n📦 Building ycm-webhook Docker image..."
+	@echo "\n📦 Building pod-coordinator-webhook Docker image..."
 	DOCKER_BUILDKIT=1 docker build --build-arg http_proxy=${http_proxy} --build-arg https_proxy=${https_proxy} -t ${DOCKER_IMG} .
 
 .PHONY: push
 push: image
-	@echo "\n📦 Pushing ycm-webhook image..."
+	@echo "\n📦 Pushing pod-coordinator-webhook image..."
 	docker push ${DOCKER_IMG}
 
 .PHONY: deploy-secret
 deploy-secret:
 	@echo "\n⚙️  Deploying secret..."
-	./webhook-create-signed-cert.sh --service ycm-webhook --namespace kube-system --secret ycm-webhook-tls
+	./webhook-create-signed-cert.sh --service pod-coordinator-webhook --namespace kube-system --secret pod-coordinator-webhook-tls
 
 .PHONY: deploy-config
 deploy-config:
