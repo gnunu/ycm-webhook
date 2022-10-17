@@ -9,11 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openyurtio/pkg/webhooks/pod-validator/certs"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/client"
-	"github.com/openyurtio/pkg/webhooks/pod-validator/configuration"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/nodes"
-	"github.com/openyurtio/pkg/webhooks/pod-validator/secret"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/utils"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -235,12 +232,6 @@ func RegisterWebhook() {
 	//clientset = client.GetClientFromEnv("/home/nunu/.kube/config")
 	clientset = client.GetClientFromCluster()
 
-	certs := certs.GenerateCerts(configuration.WebhookNamespace, configuration.WebhookService)
-
-	secret.CreateSecret(clientset, certs)
-
-	configuration.EnsureValidateConfiguration(clientset, &ValidatePath, certs)
-
 	http.HandleFunc(ValidatePath, ServeValidatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
 
@@ -250,14 +241,6 @@ func RegisterWebhook() {
 	}
 	cert := CertDir + "/tls.crt"
 	key := CertDir + "/tls.key"
-	err = utils.WriteFile(cert, certs.Cert)
-	if err != nil {
-		klog.Error(err)
-	}
-	err = utils.WriteFile(key, certs.Key)
-	if err != nil {
-		klog.Error(err)
-	}
 
 	for {
 		if utils.FileExists(cert) && utils.FileExists(key) {
