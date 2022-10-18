@@ -1,4 +1,5 @@
-DOCKER_IMG=aibox03.bj.intel.com:5000/pod-coordinator-webhook:latest
+DOCKER_IMG=pod-coordinator-webhook:latest
+DOCKER_HUB=aibox03.bj.intel.com:5000
 
 .PHONY: test
 test:
@@ -16,9 +17,14 @@ image:
 	DOCKER_BUILDKIT=1 docker build --build-arg http_proxy=${http_proxy} --build-arg https_proxy=${https_proxy} -t ${DOCKER_IMG} .
 
 .PHONY: push
-push: image
+push:
 	@echo "\n📦 Pushing pod-coordinator-webhook image..."
-	docker push ${DOCKER_IMG}
+	docker push ${DOCKER_HUB}/${DOCKER_IMG}
+
+.PHONY: manifest
+manifest:
+	@echo "\n📦 generate deployment manifest..."
+	helm template pod-coordinator charts/pod-coordinator > config/pod-coordinator.yaml
 
 .PHONY: deploy-secret
 deploy-secret:

@@ -16,9 +16,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	types "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
 
@@ -225,13 +227,10 @@ func rotateCertIfNecessary() error {
 }
 
 const (
-	CertDir string = "/etc/pod-coordinator-webhook/tls"
+	CertDir string = "/tmp/k8s-webhook-server/serving-certs"
 )
 
 func RegisterWebhook() {
-	//clientset = client.GetClientFromEnv("/home/nunu/.kube/config")
-	clientset = client.GetClientFromCluster()
-
 	http.HandleFunc(ValidatePath, ServeValidatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
 
@@ -262,16 +261,41 @@ func RegisterWebhook() {
 	klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))
 }
 
-func RegisterInformer() {
+func doNothing(obj interface{}) {
+	klog.Info("do nothing")
+}
+
+func CreateInformers() {
+	//clientset = client.GetClientFromEnv(os.Getenv("HOME") + "/.kube/config")
+	clientset = client.GetClientFromCluster()
+
 	// factory := informers.NewSharedInformerFactoryWithOptions(clientset, 10*time.Second, options)
 	factory := informers.NewSharedInformerFactory(clientset, 10*time.Second)
-	podsInformer := factory.Core().V1().Pods().Informer()
-	nodesInformer := factory.Core().V1().Nodes().Informer()
-	leasesInformer := factory.Coordination().V1().Leases().Informer()
+	klog.Infof("factory: %v\n", factory)
+	podInformer := factory.Core().V1().Pods()
+	podLister := podInformer.Lister()
+	pInformer := podInformer.Informer()
+	pInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    nil,
+		UpdateFunc: nil,
+		DeleteFunc: nil,
+	})
+	klog.Infof("podInformer: %v\n", podInformer)
 	stopCh := make(chan struct{})
 	factory.Start(stopCh)
 	factory.WaitForCacheSync(stopCh)
-	fmt.Print(podsInformer)
-	fmt.Print(nodesInformer)
-	fmt.Print(leasesInformer)
+	pods, err := podLister.List(labels.Everything())
+	if err != nil {
+		klog.Error(err)
+	} else {
+		klog.Infof("%v", len(pods))
+	}
+	/*
+		nodesInformer := factory.Core().V1().Nodes().Informer()
+		klog.Infof("nodesInformer: %v\n", nodesInformer)
+		leasesInformer := factory.Coordination().V1().Leases().Informer()
+		fmt.Print(podsInformer)
+		fmt.Print(nodesInformer)
+		fmt.Print(leasesInformer)
+	*/
 }

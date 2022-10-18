@@ -7,13 +7,13 @@ ENV CGO_ENABLED=0
 WORKDIR /work
 COPY . /work
 
-# Build ycm-webhook
+# Build pod-coordinator-webhook
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=private \
-  go build -o bin/pod-validator .
+  go build -o bin/pod-coordinator .
 
 # ---
 FROM scratch AS run
 
-COPY --from=build /work/bin/pod-validator /usr/local/bin/
+COPY --from=build /work/bin/pod-coordinator /usr/local/bin/
 
-CMD ["pod-validator"]
+CMD ["pod-coordinator"]

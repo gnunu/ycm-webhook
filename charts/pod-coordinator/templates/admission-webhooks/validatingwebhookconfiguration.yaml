@@ -1,0 +1,29 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "pod-coordinator.fullname" . }}
+webhooks:
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    caBundle: Cg==
+    service:
+      name: {{ template "pod-coordinator.name" . }}-webhook
+      namespace: {{ .Release.Namespace }}
+      path: /pod-coordinator-webhook-validate
+  failurePolicy: Fail
+  name: vpodcoordinator.kb.io
+  rules:
+  - apiGroups:
+    - pod-coordinator.openyurt.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - pods
+  sideEffects: None
+

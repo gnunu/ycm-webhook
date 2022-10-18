@@ -1,0 +1,19 @@
+{{- if .Values.admissionWebhooks.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "pod-coordinator.name" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pod-coordinator.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.admissionWebhooks.service.type }}
+  ports:
+    - port: 443
+      targetPort: {{ .Values.admissionWebhooks.service.port }}
+      protocol: TCP
+      name: https
+  selector:
+    {{ include "pod-coordinator.selectorLabels" . | nindent 6 }}
+
+{{- end -}}
