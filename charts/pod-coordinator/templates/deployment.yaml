@@ -31,15 +31,6 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - --v=4
-          ports:
-            - name: webhook-server
-              containerPort: {{ .Values.admissionWebhooks.service.port }}
-              protocol: TCP
-            - name: health
-              containerPort: 8000
-              protocol: TCP
           env:
             - name: WEBHOOK_PORT
               value: {{ .Values.admissionWebhooks.service.port | quote }}
@@ -57,18 +48,6 @@ spec:
                   fieldPath: metadata.namespace
             - name: WEBHOOK_CERT_DIR
               value: {{ .Values.admissionWebhooks.certificate.mountPath | quote }}
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: health
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: health
-            initialDelaySeconds: 5
-            periodSeconds: 10
           volumeMounts:
             - mountPath: {{ .Values.admissionWebhooks.certificate.mountPath }}
               name: cert

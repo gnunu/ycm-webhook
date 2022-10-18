@@ -5,13 +5,12 @@
 replicaCount: 1
 
 image:
-  repository: pod-coordinator-webhook
+  repository: aibox03.bj.intel.com:5000/pod-coordinator-webhook
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
 
-#imageRegistry: "docker.io"
-imageRegistry: "aibox03.bj.intel.com:5000"
+imageRegistry: "docker.io"
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
