@@ -19,6 +19,7 @@ image:
 .PHONY: push
 push:
 	@echo "\n📦 Pushing pod-coordinator-webhook image..."
+	docker tag ${DOCKER_IMG} ${DOCKER_HUB}/${DOCKER_IMG}
 	docker push ${DOCKER_HUB}/${DOCKER_IMG}
 
 .PHONY: manifest
