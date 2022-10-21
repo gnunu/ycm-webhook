@@ -2,38 +2,37 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/openyurtio/pkg/webhooks/pod-validator/client"
+	"github.com/openyurtio/pkg/webhooks/pod-validator/lister"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/nodes"
 	"github.com/openyurtio/pkg/webhooks/pod-validator/utils"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	types "k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
 
 const (
-	podaffinityannotation string = "podaffinityannotation"
-	podaffinitynode       string = "podnodeaffinity"
-	podaffinitypool       string = "podpoolaffinity"
+	podAvailableAnnotation string = "pod.beta.openyurt.io/available"
+	podAvailableNode       string = "node"
+	podAvailablePool       string = "pool"
+
+	msgNodeAutonomy                      string = "node autonomy annotated, eviction aborted"
+	msgPodAvailableNode                  string = "pod should exist on the specific node, eviction aborted"
+	msgPodAvailablePoolAndNodeIsAlive    string = "node is actually alive in a pool, eviction aborted"
+	msgPodAvailablePoolAndNodeIsNotAlive string = "node is not alive in a pool, eviction approved"
+	msgPodDeleteValidated                string = "pod deletion validated"
 )
 
 var (
 	ValidatePath string = "/pod-coordinator-webhook-validate"
 	HealthPath   string = "/pod-coordinator-webhook-health"
-	clientset    *kubernetes.Clientset
 )
 
 type validation struct {
@@ -64,7 +63,7 @@ func (pv *PodValidator) userIsNodeController() bool {
 func (pv *PodValidator) getNode() error {
 	nodeName := pv.pod.Spec.NodeName
 	klog.Infof("nodeName: %s", nodeName)
-	node, err := clientset.CoreV1().Nodes().Get(context.TODO(), nodeName, v1.GetOptions{})
+	node, err := lister.NodeLister().Get(nodeName)
 	pv.node = node
 	return err
 }
@@ -106,25 +105,32 @@ func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 	return reviewResponse(pv.request.UID, true, http.StatusAccepted, val.Reason), nil
 }
 
-// ValidatePod returns true if a pod is valid
+// ValidateDel returns true if a pod is valid to delete/evict
 func (pv *PodValidator) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if pv.userIsNodeController() {
+			// node is autonomy annotated
 			if nodes.NodeIsInAutonomy(pv.node) {
-				return validation{Valid: false, Reason: "node autonomy labeled"}, nil
+				return validation{Valid: false, Reason: msgNodeAutonomy}, nil
 			}
-			// case 1: pod has annotation of nodeaffinity
-			// return validation{Valid: false, Reason: "pod has annotation of nodeautonomy"}, nil
 
-			// case 2: pod has annotation of poolaffinity
-			// if the node has lease object proxyed
-			// return validation{Valid: false, Reason: "pod has annotatiuon of poolautonomy, and the node is alive"}, nil
-			// else if the node is really down
-			// return validation{Valid: true, Reason: "pod has annotatiuon of poolautonomy, and the node is down, allow transition"}, nil
-			// when pod is poolautonomy annotated, the pod should be updated with node affinity
+			if pv.pod.Annotations != nil {
+				// pod has annotation of node available
+				if pv.pod.Annotations[podAvailableAnnotation] == "node" {
+					return validation{Valid: false, Reason: msgPodAvailableNode}, nil
+				}
+
+				if pv.pod.Annotations[podAvailableAnnotation] == "pool" {
+					if nodes.NodeIsAlive(pv.node) {
+						return validation{Valid: false, Reason: msgPodAvailablePoolAndNodeIsAlive}, nil
+					} else {
+						return validation{Valid: true, Reason: msgPodAvailablePoolAndNodeIsNotAlive}, nil
+					}
+				}
+			}
 		}
 	}
-	return validation{Valid: true, Reason: "validated pod deletion"}, nil
+	return validation{Valid: true, Reason: msgPodDeleteValidated}, nil
 }
 
 func reviewResponse(uid types.UID, allowed bool, httpCode int32,
@@ -259,43 +265,4 @@ func RegisterWebhook() {
 
 	klog.Info("Listening on port 443...")
 	klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))
-}
-
-func doNothing(obj interface{}) {
-	klog.Info("do nothing")
-}
-
-func CreateInformers() {
-	//clientset = client.GetClientFromEnv(os.Getenv("HOME") + "/.kube/config")
-	clientset = client.GetClientFromCluster()
-
-	// factory := informers.NewSharedInformerFactoryWithOptions(clientset, 10*time.Second, options)
-	factory := informers.NewSharedInformerFactory(clientset, 10*time.Second)
-	klog.Infof("factory: %v\n", factory)
-	podInformer := factory.Core().V1().Pods()
-	podLister := podInformer.Lister()
-	pInformer := podInformer.Informer()
-	pInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    nil,
-		UpdateFunc: nil,
-		DeleteFunc: nil,
-	})
-	klog.Infof("podInformer: %v\n", podInformer)
-	stopCh := make(chan struct{})
-	factory.Start(stopCh)
-	factory.WaitForCacheSync(stopCh)
-	pods, err := podLister.List(labels.Everything())
-	if err != nil {
-		klog.Error(err)
-	} else {
-		klog.Infof("%v", len(pods))
-	}
-	/*
-		nodesInformer := factory.Core().V1().Nodes().Informer()
-		klog.Infof("nodesInformer: %v\n", nodesInformer)
-		leasesInformer := factory.Coordination().V1().Leases().Informer()
-		fmt.Print(podsInformer)
-		fmt.Print(nodesInformer)
-		fmt.Print(leasesInformer)
-	*/
 }

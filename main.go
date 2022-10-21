@@ -1,6 +1,8 @@
 package main
 
+import "github.com/openyurtio/pkg/webhooks/pod-validator/lister"
+
 func main() {
-	CreateInformers()
+	lister.CreateListers()
 	RegisterWebhook()
 }
