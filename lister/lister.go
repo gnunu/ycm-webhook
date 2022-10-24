@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/openyurtio/pkg/webhooks/pod-validator/client"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	leaselisterv1 "k8s.io/client-go/listers/coordination/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
@@ -51,7 +52,7 @@ func CreateListers() {
 		DeleteFunc: nil,
 	})
 	leaseInformer := factory.Coordination().V1().Leases()
-	leaseLister = leaseInformer.Lister().Leases("kube-node-lease")
+	leaseLister = leaseInformer.Lister().Leases(corev1.NamespaceNodeLease)
 	lInformer := leaseInformer.Informer()
 	lInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    nil,
