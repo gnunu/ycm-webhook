@@ -1,14 +1,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "pod-coordinator.fullname" . }}
+  name: {{ include "pool-coordinator.fullname" . }}
   labels:
-    {{- include "pod-coordinator.labels" . | nindent 4 }}
+    {{- include "pool-coordinator.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "pod-coordinator.selectorLabels" . | nindent 6 }}
+      {{- include "pool-coordinator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -16,13 +16,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "pod-coordinator.selectorLabels" . | nindent 8 }}
+        {{- include "pool-coordinator.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "pod-coordinator.serviceAccountName" . }}
+      serviceAccountName: {{ include "pool-coordinator.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -35,13 +35,13 @@ spec:
             - name: WEBHOOK_PORT
               value: {{ .Values.admissionWebhooks.service.port | quote }}
             - name: SECRET_NAME
-              value: {{ include "pod-coordinator.fullname" . | quote }}
+              value: {{ include "pool-coordinator.fullname" . | quote }}
             - name: SERVICE_NAME
-              value: {{ include "pod-coordinator.fullname" . | quote }}
+              value: {{ include "pool-coordinator.fullname" . | quote }}
             - name: MUTATING_WEBHOOK_CONFIGURATION_NAME
-              value: {{ include "pod-coordinator.fullname" . | quote }}
+              value: {{ include "pool-coordinator.fullname" . | quote }}
             - name: VALIDATING_WEBHOOK_CONFIGURATION_NAME
-              value: {{ include "pod-coordinator.fullname" . | quote }}
+              value: {{ include "pool-coordinator.fullname" . | quote }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -73,4 +73,4 @@ spec:
       - name: cert
         secret:
           defaultMode: 420
-          secretName: {{ template "pod-coordinator.fullname" . }}-admission
+          secretName: {{ template "pool-coordinator.fullname" . }}-admission

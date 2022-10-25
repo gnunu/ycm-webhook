@@ -1,4 +1,4 @@
-module github.com/openyurtio/pkg/webhooks/pod-validator
+module github.com/openyurtio/pkg/controller/poolcoordinator
 
 go 1.17
 

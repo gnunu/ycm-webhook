@@ -1,4 +1,4 @@
-package main
+package webhook
 
 import (
 	"bytes"
@@ -8,21 +8,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openyurtio/pkg/webhooks/pod-validator/lister"
-	"github.com/openyurtio/pkg/webhooks/pod-validator/nodes"
-	"github.com/openyurtio/pkg/webhooks/pod-validator/utils"
+	"github.com/openyurtio/pkg/controller/poolcoordinator/client"
+	"github.com/openyurtio/pkg/controller/poolcoordinator/constant"
+	"github.com/openyurtio/pkg/controller/poolcoordinator/lister"
+	"github.com/openyurtio/pkg/controller/poolcoordinator/utils"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
+	leaselisterv1 "k8s.io/client-go/listers/coordination/v1"
+	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 )
 
 const (
-	podAvailableAnnotation string = "pod.beta.openyurt.io/available"
-	podAvailableNode       string = "node"
-	podAvailablePool       string = "pool"
-
 	msgNodeAutonomy                      string = "node autonomy annotated, eviction aborted"
 	msgPodAvailableNode                  string = "pod should exist on the specific node, eviction aborted"
 	msgPodAvailablePoolAndNodeIsAlive    string = "node is actually alive in a pool, eviction aborted"
@@ -31,8 +30,11 @@ const (
 )
 
 var (
-	ValidatePath string = "/pod-coordinator-webhook-validate"
-	HealthPath   string = "/pod-coordinator-webhook-health"
+	ValidatePath string = "/pool-coordinator-webhook-validate"
+	HealthPath   string = "/pool-coordinator-webhook-health"
+
+	nodeLister  listerv1.NodeLister
+	leaseLister leaselisterv1.LeaseNamespaceLister
 )
 
 type validation struct {
@@ -60,10 +62,30 @@ func (pv *PodValidator) userIsNodeController() bool {
 	return strings.Contains(pv.request.UserInfo.Username, "system:serviceaccount:kube-system:node-controller")
 }
 
+func (pv *PodValidator) NodeIsInAutonomy(node *corev1.Node) bool {
+	if node.Annotations != nil && node.Annotations[constant.AnnotationKeyNodeAutonomy] == "true" {
+		return true
+	}
+	return false
+}
+
+func (pv *PodValidator) NodeIsAlive(node *corev1.Node) bool {
+	lease, err := leaseLister.Get(node.Name)
+	if err != nil {
+		klog.Error(err)
+		return false
+	}
+	diff := time.Now().Sub(lease.GetCreationTimestamp().Time)
+	if diff.Seconds() > 40 {
+		return false
+	}
+	return true
+}
+
 func (pv *PodValidator) getNode() error {
 	nodeName := pv.pod.Spec.NodeName
 	klog.Infof("nodeName: %s", nodeName)
-	node, err := lister.NodeLister().Get(nodeName)
+	node, err := nodeLister.Get(nodeName)
 	pv.node = node
 	return err
 }
@@ -110,18 +132,18 @@ func (pv *PodValidator) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if pv.userIsNodeController() {
 			// node is autonomy annotated
-			if nodes.NodeIsInAutonomy(pv.node) {
+			if pv.NodeIsInAutonomy(pv.node) {
 				return validation{Valid: false, Reason: msgNodeAutonomy}, nil
 			}
 
 			if pv.pod.Annotations != nil {
 				// pod has annotation of node available
-				if pv.pod.Annotations[podAvailableAnnotation] == "node" {
+				if pv.pod.Annotations[constant.PodAvailableAnnotation] == "node" {
 					return validation{Valid: false, Reason: msgPodAvailableNode}, nil
 				}
 
-				if pv.pod.Annotations[podAvailableAnnotation] == "pool" {
-					if nodes.NodeIsAlive(pv.node) {
+				if pv.pod.Annotations[constant.PodAvailableAnnotation] == "pool" {
+					if pv.NodeIsAlive(pv.node) {
 						return validation{Valid: false, Reason: msgPodAvailablePoolAndNodeIsAlive}, nil
 					} else {
 						return validation{Valid: true, Reason: msgPodAvailablePoolAndNodeIsNotAlive}, nil
@@ -236,7 +258,10 @@ const (
 	CertDir string = "/tmp/k8s-webhook-server/serving-certs"
 )
 
-func RegisterWebhook() {
+func Run(nLister listerv1.NodeLister, lLister leaselisterv1.LeaseNamespaceLister) {
+	nodeLister = nLister
+	leaseLister = lLister
+
 	http.HandleFunc(ValidatePath, ServeValidatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
 
@@ -257,11 +282,9 @@ func RegisterWebhook() {
 		}
 	}
 
-	// rotate cert if necessary
-	err = rotateCertIfNecessary()
-	if err != nil {
-		klog.Fatal(err)
-	}
+	client := client.GetClientFromCluster()
+	stopper := make(chan (struct{}))
+	nodeLister = lister.CreateNodeLister(client, stopper, nil, nil, nil)
 
 	klog.Info("Listening on port 443...")
 	klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))

@@ -2,13 +2,13 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name:  {{ template "pod-coordinator.fullname" . }}-admission
+  name:  {{ template "pool-coordinator.fullname" . }}-admission
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
-    app: {{ template "pod-coordinator.name" . }}-admission
-    {{- include "pod-coordinator.labels" . | nindent 4 }}
+    app: {{ template "pool-coordinator.name" . }}-admission
+    {{- include "pool-coordinator.labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - admissionregistration.k8s.io

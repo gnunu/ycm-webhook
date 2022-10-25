@@ -1,8 +1,10 @@
 package main
 
-import "github.com/openyurtio/pkg/webhooks/pod-validator/lister"
+import (
+	"github.com/openyurtio/pkg/controller/poolcoordinator/controller"
+)
 
 func main() {
-	lister.CreateListers()
-	RegisterWebhook()
+	nc := controller.GetController()
+	nc.Run()
 }

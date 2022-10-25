@@ -2,14 +2,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name:  {{ template "pod-coordinator.fullname" . }}-admission-create
+  name:  {{ template "pool-coordinator.fullname" . }}-admission-patch
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
-    app: {{ template "pod-coordinator.name" . }}-admission-create
-    {{- include "pod-coordinator.labels" . | nindent 4 }}
+    app: {{ template "pool-coordinator.name" . }}-admission-patch
+    {{- include "pool-coordinator.labels" . | nindent 4 }}
 spec:
   {{- if .Capabilities.APIVersions.Has "batch/v1alpha1" }}
   # Alpha feature since k8s 1.12
@@ -17,28 +17,30 @@ spec:
   {{- end }}
   template:
     metadata:
-      name:  {{ template "pod-coordinator.fullname" . }}-admission-create
+      name:  {{ template "pool-coordinator.fullname" . }}-admission-patch
       labels:
-        app: {{ template "pod-coordinator.name" . }}-admission-create
-        {{- include "pod-coordinator.labels" . | nindent 8 }}
+        app: {{ template "pool-coordinator.name" . }}-admission-patch
+        {{- include "pool-coordinator.labels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
       {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: create
+        - name: patch
           image: {{ .Values.imageRegistry }}/{{ .Values.admissionWebhooks.patch.image.repository }}:{{ .Values.admissionWebhooks.patch.image.tag }}
           imagePullPolicy: {{ .Values.admissionWebhooks.patch.image.pullPolicy }}
           args:
-            - create
-            - --host={{ template "pod-coordinator.name" . }}-webhook,{{ template "pod-coordinator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+            - patch
+            - --webhook-name={{ template "pool-coordinator.fullname" . }}
             - --namespace={{ .Release.Namespace }}
-            - --secret-name={{ template "pod-coordinator.fullname" . }}-admission
-            - --key-name=tls.key
-            - --cert-name=tls.crt
+            - --secret-name={{ template "pool-coordinator.fullname" . }}-admission
+            - --patch-failure-policy={{ .Values.admissionWebhooks.failurePolicy }}
+            - --patch-mutating=false
+            - --patch-validating=true
+            - --log-level=trace
       restartPolicy: OnFailure
-      serviceAccountName: {{ template "pod-coordinator.fullname" . }}-admission
+      serviceAccountName: {{ template "pool-coordinator.fullname" . }}-admission
       {{- with .Values.admissionWebhooks.patch.affinity }}
       affinity:
 {{ toYaml . | indent 8 }}

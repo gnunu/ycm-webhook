@@ -9,11 +9,11 @@ COPY . /work
 
 # Build pod-coordinator-webhook
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=private \
-  go build -o bin/pod-coordinator .
+  go build -o bin/pool-coordinator-controller .
 
 # ---
 FROM scratch AS run
 
-COPY --from=build /work/bin/pod-coordinator /usr/local/bin/
+COPY --from=build /work/bin/pool-coordinator-controller /usr/local/bin/
 
 CMD ["pod-coordinator"]

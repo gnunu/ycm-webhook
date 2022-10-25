@@ -1,7 +1,7 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  name: {{ include "pod-coordinator.fullname" . }}
+  name: {{ include "pool-coordinator.fullname" . }}
 webhooks:
 - admissionReviewVersions:
   - v1
@@ -9,14 +9,14 @@ webhooks:
   clientConfig:
     caBundle: Cg==
     service:
-      name: {{ template "pod-coordinator.name" . }}-webhook
+      name: {{ template "pool-coordinator.name" . }}-webhook
       namespace: {{ .Release.Namespace }}
-      path: /pod-coordinator-webhook-validate
+      path: /pool-coordinator-webhook-validate
   failurePolicy: Fail
   name: vpodcoordinator.kb.io
   rules:
   - apiGroups:
-    - pod-coordinator.openyurt.io
+    - pool-coordinator.openyurt.io
     apiVersions:
     - v1alpha1
     operations:
