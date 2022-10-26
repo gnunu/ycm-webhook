@@ -12,6 +12,7 @@ import (
 	"github.com/openyurtio/pkg/controller/poolcoordinator/constant"
 	"github.com/openyurtio/pkg/controller/poolcoordinator/lister"
 	"github.com/openyurtio/pkg/controller/poolcoordinator/utils"
+	"github.com/wI2L/jsondiff"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +32,7 @@ const (
 
 var (
 	ValidatePath string = "/pool-coordinator-webhook-validate"
+	MutatePath   string = "/pool-coordinator-webhook-mutate"
 	HealthPath   string = "/pool-coordinator-webhook-health"
 
 	nodeLister  listerv1.NodeLister
@@ -42,14 +44,14 @@ type validation struct {
 	Reason string
 }
 
-type PodValidator struct {
+type PodAdmission struct {
 	request *admissionv1.AdmissionRequest
 	pod     *corev1.Pod
 	node    *corev1.Node
 }
 
 // extracts pod from admission request
-func (pv *PodValidator) getPod() error {
+func (pv *PodAdmission) getPod() error {
 	if err := json.Unmarshal(pv.request.OldObject.Raw, pv.pod); err != nil {
 		klog.Error(err)
 		return err
@@ -58,18 +60,18 @@ func (pv *PodValidator) getPod() error {
 	return nil
 }
 
-func (pv *PodValidator) userIsNodeController() bool {
+func (pv *PodAdmission) userIsNodeController() bool {
 	return strings.Contains(pv.request.UserInfo.Username, "system:serviceaccount:kube-system:node-controller")
 }
 
-func (pv *PodValidator) NodeIsInAutonomy(node *corev1.Node) bool {
+func (pv *PodAdmission) NodeIsInAutonomy(node *corev1.Node) bool {
 	if node.Annotations != nil && node.Annotations[constant.AnnotationKeyNodeAutonomy] == "true" {
 		return true
 	}
 	return false
 }
 
-func (pv *PodValidator) NodeIsAlive(node *corev1.Node) bool {
+func (pv *PodAdmission) NodeIsAlive(node *corev1.Node) bool {
 	lease, err := leaseLister.Get(node.Name)
 	if err != nil {
 		klog.Error(err)
@@ -82,7 +84,7 @@ func (pv *PodValidator) NodeIsAlive(node *corev1.Node) bool {
 	return true
 }
 
-func (pv *PodValidator) getNode() error {
+func (pv *PodAdmission) getNode() error {
 	nodeName := pv.pod.Spec.NodeName
 	klog.Infof("nodeName: %s", nodeName)
 	node, err := nodeLister.Get(nodeName)
@@ -90,7 +92,7 @@ func (pv *PodValidator) getNode() error {
 	return err
 }
 
-func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
+func (pv *PodAdmission) ValidateReview() (*admissionv1.AdmissionReview, error) {
 	if pv.request.Kind.Kind != "Pod" {
 		err := fmt.Errorf("only pods are supported here")
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, ""), err
@@ -128,7 +130,7 @@ func (pv *PodValidator) ValidateReview() (*admissionv1.AdmissionReview, error) {
 }
 
 // ValidateDel returns true if a pod is valid to delete/evict
-func (pv *PodValidator) validateDel() (validation, error) {
+func (pv *PodAdmission) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if pv.userIsNodeController() {
 			// node is autonomy annotated
@@ -155,8 +157,72 @@ func (pv *PodValidator) validateDel() (validation, error) {
 	return validation{Valid: true, Reason: msgPodDeleteValidated}, nil
 }
 
-func reviewResponse(uid types.UID, allowed bool, httpCode int32,
-	reason string) *admissionv1.AdmissionReview {
+func (pv *PodAdmission) MutateAddToleration() ([]byte, error) {
+	toadd := []corev1.Toleration{
+		{Key: "node.kubernetes.io/unreachable",
+			Operator: "Exists",
+			Effect:   "NoExecute"},
+		{Key: "node.kubernetes.io/not-ready",
+			Operator: "Exists",
+			Effect:   "NoExecute"},
+	}
+	tols := pv.pod.Spec.Tolerations
+	merged, changed := utils.MergeTolerations(tols, toadd)
+	if !changed {
+		return nil, nil
+	}
+
+	mpod := pv.pod.DeepCopy()
+	mpod.Spec.Tolerations = merged
+
+	// generate json patch
+	patch, err := jsondiff.Compare(pv.pod, mpod)
+	if err != nil {
+		return nil, err
+	}
+
+	patchb, err := json.Marshal(patch)
+	if err != nil {
+		return nil, err
+	}
+
+	return patchb, nil
+}
+
+func (pv *PodAdmission) MutateReview() (*admissionv1.AdmissionReview, error) {
+	if pv.request.Kind.Kind != "Pod" {
+		err := fmt.Errorf("only pods are supported here")
+		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, ""), err
+	}
+
+	if pv.request.Operation != admissionv1.Create && pv.request.Operation != admissionv1.Update {
+		reason := fmt.Sprintf("Operation %v is accepted always", pv.request.Operation)
+		return reviewResponse(pv.request.UID, true, http.StatusAccepted, reason), nil
+	}
+
+	err := pv.getPod()
+	if err != nil {
+		e := fmt.Sprintf("could not parse pod in admission review request: %v", err)
+		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, e), err
+	}
+
+	if pv.pod.Annotations == nil || pv.pod.Annotations[constant.PodAvailableAnnotation] != "true" {
+		return reviewResponse(pv.request.UID, true, http.StatusAccepted, "no need of mutation"), nil
+	}
+
+	// add tolerations if not yet
+	val, err := pv.MutateAddToleration()
+	if err != nil {
+		return reviewResponse(pv.request.UID, true, http.StatusAccepted, "could not merge tolerations"), err
+	}
+	if val == nil {
+		return reviewResponse(pv.request.UID, true, http.StatusAccepted, "tolerations already existed"), nil
+	}
+
+	return patchReviewResponse(pv.request.UID, val)
+}
+
+func reviewResponse(uid types.UID, allowed bool, httpCode int32, reason string) *admissionv1.AdmissionReview {
 	return &admissionv1.AdmissionReview{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AdmissionReview",
@@ -171,6 +237,24 @@ func reviewResponse(uid types.UID, allowed bool, httpCode int32,
 			},
 		},
 	}
+}
+
+// patchReviewResponse builds an admission review with given json patch
+func patchReviewResponse(uid types.UID, patch []byte) (*admissionv1.AdmissionReview, error) {
+	patchType := admissionv1.PatchTypeJSONPatch
+
+	return &admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AdmissionReview",
+			APIVersion: "admission.k8s.io/v1",
+		},
+		Response: &admissionv1.AdmissionResponse{
+			UID:       uid,
+			Allowed:   true,
+			PatchType: &patchType,
+			Patch:     patch,
+		},
+	}, nil
 }
 
 // ServeHealth returns 200 when things are good
@@ -191,7 +275,7 @@ func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pv := &PodValidator{
+	pv := &PodAdmission{
 		request: in.Request,
 		pod:     &corev1.Pod{},
 	}
@@ -200,6 +284,49 @@ func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
 		in.Request.Name, in.Request.Namespace, in.Request.Operation, &in.Request.UserInfo)
 
 	out, err := pv.ValidateReview()
+
+	if err != nil {
+		e := fmt.Sprintf("could not generate admission response: %v", err)
+		klog.Error(e)
+		http.Error(w, e, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	jout, err := json.Marshal(out)
+	if err != nil {
+		e := fmt.Sprintf("could not parse admission response: %v", err)
+		klog.Error(e)
+		http.Error(w, e, http.StatusInternalServerError)
+		return
+	}
+
+	klog.Info("sending response")
+	klog.Infof("%s", jout)
+	fmt.Fprintf(w, "%s", jout)
+}
+
+// ServeMutatePods mutates an admission request and then writes an admission
+func ServeMutatePods(w http.ResponseWriter, r *http.Request) {
+	klog.Info("uri", r.RequestURI)
+	klog.Info("received validation request")
+
+	in, err := parseRequest(*r)
+	if err != nil {
+		klog.Error(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	pv := &PodAdmission{
+		request: in.Request,
+		pod:     &corev1.Pod{},
+	}
+
+	klog.Infof("name: %s, namespace: %s, operation: %s, from: %v",
+		in.Request.Name, in.Request.Namespace, in.Request.Operation, &in.Request.UserInfo)
+
+	out, err := pv.MutateReview()
 
 	if err != nil {
 		e := fmt.Sprintf("could not generate admission response: %v", err)
@@ -250,10 +377,6 @@ func parseRequest(r http.Request) (*admissionv1.AdmissionReview, error) {
 	return &a, nil
 }
 
-func rotateCertIfNecessary() error {
-	return nil
-}
-
 const (
 	CertDir string = "/tmp/k8s-webhook-server/serving-certs"
 )
@@ -263,6 +386,7 @@ func Run(nLister listerv1.NodeLister, lLister leaselisterv1.LeaseNamespaceLister
 	leaseLister = lLister
 
 	http.HandleFunc(ValidatePath, ServeValidatePods)
+	http.HandleFunc(MutatePath, ServeMutatePods)
 	http.HandleFunc(HealthPath, ServeHealth)
 
 	err := utils.EnsureDir(CertDir)

@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: aibox03.bj.intel.com:5000/pool-coordinator
+  repository: aibox03.bj.intel.com:5000/pool-coordinator-controller
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"

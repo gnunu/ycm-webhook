@@ -1,5 +1,5 @@
 apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingWebhookConfiguration
+kind: MutatingWebhookConfiguration
 metadata:
   name: {{ include "pool-coordinator.fullname" . }}
 webhooks:
@@ -11,16 +11,17 @@ webhooks:
     service:
       name: {{ template "pool-coordinator.name" . }}-webhook
       namespace: {{ .Release.Namespace }}
-      path: /pool-coordinator-webhook-validate
+      path: /pool-coordinator-webhook-mutate
   failurePolicy: Fail
-  name: vpoolcoordinator.kb.io
+  name: mpoolcoordinator.kb.io
   rules:
   - apiGroups:
     - pool-coordinator.openyurt.io
     apiVersions:
     - v1alpha1
     operations:
-    - DELETE
+    - CREATE
+    - UPDATE
     resources:
     - pods
   sideEffects: None

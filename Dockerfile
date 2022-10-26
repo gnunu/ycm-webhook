@@ -16,4 +16,4 @@ FROM scratch AS run
 
 COPY --from=build /work/bin/pool-coordinator-controller /usr/local/bin/
 
-CMD ["pod-coordinator"]
+CMD ["pod-coordinator-controller"]

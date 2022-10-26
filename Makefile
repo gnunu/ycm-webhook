@@ -1,4 +1,4 @@
-DOCKER_IMG=pool-coordinator-webhook:latest
+DOCKER_IMG=pool-coordinator-controller:latest
 DOCKER_HUB=aibox03.bj.intel.com:5000
 
 .PHONY: test
@@ -18,7 +18,7 @@ image:
 
 .PHONY: push
 push:
-	@echo "\n📦 Pushing pool-coordinator-webhook image..."
+	@echo "\n📦 Pushing pool-coordinator-controller image..."
 	docker tag ${DOCKER_IMG} ${DOCKER_HUB}/${DOCKER_IMG}
 	docker push ${DOCKER_HUB}/${DOCKER_IMG}
 
