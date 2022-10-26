@@ -1,7 +1,6 @@
 package lister
 
 import (
-	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +23,7 @@ type ACallback func(interface{})
 type UCallback func(interface{}, interface{})
 
 func CreateNodeLister(client *kubernetes.Clientset, stopper chan (struct{}), afunc ACallback, ufunc UCallback, dfunc ACallback) listerv1.NodeLister {
-	if reflect.ValueOf(factory).IsNil() {
+	if factory == nil {
 		factory = informers.NewSharedInformerFactory(client, resyncInt)
 	}
 	nodeInformer := factory.Core().V1().Nodes()
@@ -35,12 +34,13 @@ func CreateNodeLister(client *kubernetes.Clientset, stopper chan (struct{}), afu
 		UpdateFunc: ufunc,
 		DeleteFunc: dfunc,
 	})
-	nInformer.Run(stopper)
+	factory.Start(stopper)
+	factory.WaitForCacheSync(stopper)
 	return nodeLister
 }
 
 func CreatePodLister(client *kubernetes.Clientset, stopper chan (struct{}), afunc ACallback, ufunc UCallback, dfunc ACallback) listerv1.PodLister {
-	if reflect.ValueOf(factory).IsNil() {
+	if factory == nil {
 		factory = informers.NewSharedInformerFactory(client, resyncInt)
 	}
 	podInformer := factory.Core().V1().Pods()
@@ -51,12 +51,13 @@ func CreatePodLister(client *kubernetes.Clientset, stopper chan (struct{}), afun
 		UpdateFunc: nil,
 		DeleteFunc: nil,
 	})
-	pInformer.Run(stopper)
+	factory.Start(stopper)
+	factory.WaitForCacheSync(stopper)
 	return podLister
 }
 
 func CreateLeaseLister(client *kubernetes.Clientset, stopper chan (struct{}), acb ACallback, ucb UCallback, dcb ACallback) leaselisterv1.LeaseNamespaceLister {
-	if reflect.ValueOf(factory).IsNil() {
+	if factory == nil {
 		factory = informers.NewSharedInformerFactory(client, resyncInt)
 	}
 	leaseInformer := factory.Coordination().V1().Leases()
@@ -67,6 +68,7 @@ func CreateLeaseLister(client *kubernetes.Clientset, stopper chan (struct{}), ac
 		UpdateFunc: ucb,
 		DeleteFunc: dcb,
 	})
-	lInformer.Run(stopper)
+	factory.Start(stopper)
+	factory.WaitForCacheSync(stopper)
 	return leaseLister
 }

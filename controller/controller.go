@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openyurtio/pkg/controller/poolcoordinator/client"
 	"github.com/openyurtio/pkg/controller/poolcoordinator/constant"
@@ -42,6 +43,7 @@ func GetController() *Controller {
 	if ctl == nil {
 		ctl = &Controller{
 			client: client.GetClientFromCluster(),
+			//client: client.GetClientFromEnv(os.Getenv("HOME") + "/.kube/config"),
 		}
 	}
 
@@ -94,8 +96,13 @@ func (nc *Controller) Run() {
 	stopCH := make(chan (struct{}))
 	stopper := make(chan (struct{}))
 	defer close(stopper)
-	nc.nodeLister = lister.CreateNodeLister(nc.client, stopper, nil, nil, nil)
+	klog.Info("create lease lister")
 	nc.leaseLister = lister.CreateLeaseLister(nc.client, stopper, nil, onLeaseUpdate, nil)
+	klog.Info("create node lister")
+	nc.nodeLister = lister.CreateNodeLister(nc.client, stopper, nil, nil, nil)
+	klog.Info("create webhook")
 	go webhook.Run(nc.nodeLister, nc.leaseLister)
+	n, _ := nc.nodeLister.Get("ai-ice-vm31")
+	fmt.Printf("%v\n", n)
 	<-stopCH
 }
