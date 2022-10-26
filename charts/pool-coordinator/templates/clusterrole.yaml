@@ -9,10 +9,11 @@ rules:
       - pods
     verbs:
       - create
-      - update
-      - patch
       - delete
+      - get
       - list
+      - patch
+      - update
       - watch
   - apiGroups:
     - ""
@@ -35,27 +36,10 @@ rules:
       - update
       - watch
   - apiGroups:
-    - admissionregistration.k8s.io
+    - coordination.k8s.io
     resources:
-      - mutatingwebhookconfigurations
+      - leases
     verbs:
-      - create
-      - delete
       - get
       - list
-      - patch
-      - update
       - watch
-  - apiGroups:
-    - admissionregistration.k8s.io
-    resources:
-      - validatingwebhookconfigurations
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-
