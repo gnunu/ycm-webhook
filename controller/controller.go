@@ -26,10 +26,22 @@ type Controller struct {
 
 var ctl *Controller
 
+func onLeaseCreate(n interface{}) {
+	nl := n.(*coordv1.Lease)
+	//klog.Infof("new lease: %v\n", nl)
+
+	taintIfNeeded(nl)
+}
+
 func onLeaseUpdate(o interface{}, n interface{}) {
 	//ol := o.(*coordv1.Lease)
 	nl := n.(*coordv1.Lease)
+	//klog.Infof("updated lease: %v\n", nl)
 
+	taintIfNeeded(nl)
+}
+
+func taintIfNeeded(nl *coordv1.Lease) {
 	if nl.Annotations != nil {
 		if nl.Annotations[constant.DelegateHeartBeat] == "true" {
 			GetController().taintNodeNotSchedulable(nl.Name)
@@ -97,7 +109,7 @@ func (nc *Controller) Run() {
 	stopper := make(chan (struct{}))
 	defer close(stopper)
 	klog.Info("create lease lister")
-	nc.leaseLister = lister.CreateLeaseLister(nc.client, stopper, nil, onLeaseUpdate, nil)
+	nc.leaseLister = lister.CreateLeaseLister(nc.client, stopper, onLeaseCreate, onLeaseUpdate, nil)
 	klog.Info("create node lister")
 	nc.nodeLister = lister.CreateNodeLister(nc.client, stopper, nil, nil, nil)
 	klog.Info("create webhook")
