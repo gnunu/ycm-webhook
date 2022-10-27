@@ -50,7 +50,7 @@ func onLeaseUpdate(o interface{}, n interface{}) {
 	}
 
 	if ook && !nok {
-		if oval == "false" {
+		if oval != "true" {
 			return
 		} else {
 			GetController().deTaintNodeNotSchedulable(nl.Name)
@@ -58,7 +58,7 @@ func onLeaseUpdate(o interface{}, n interface{}) {
 	}
 
 	if !ook && nok {
-		if nval == "false" {
+		if nval != "true" {
 			return
 		} else {
 			GetController().taintNodeNotSchedulable(nl.Name)
