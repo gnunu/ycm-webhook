@@ -30,20 +30,45 @@ func onLeaseCreate(n interface{}) {
 	nl := n.(*coordv1.Lease)
 	//klog.Infof("new lease: %v\n", nl)
 
-	taintIfNeeded(nl)
+	if val, ok := nl.Annotations[constant.DelegateHeartBeat]; ok {
+		if val == "true" {
+			GetController().taintNodeNotSchedulable(nl.Name)
+		}
+	}
 }
 
 func onLeaseUpdate(o interface{}, n interface{}) {
-	//ol := o.(*coordv1.Lease)
+	ol := o.(*coordv1.Lease)
 	nl := n.(*coordv1.Lease)
 	//klog.Infof("updated lease: %v\n", nl)
 
-	taintIfNeeded(nl)
-}
+	oval, ook := ol.Annotations[constant.DelegateHeartBeat]
+	nval, nok := nl.Annotations[constant.DelegateHeartBeat]
 
-func taintIfNeeded(nl *coordv1.Lease) {
-	if nl.Annotations != nil {
-		if nl.Annotations[constant.DelegateHeartBeat] == "true" {
+	if !ook && !nok {
+		return
+	}
+
+	if ook && !nok {
+		if oval == "false" {
+			return
+		} else {
+			GetController().deTaintNodeNotSchedulable(nl.Name)
+		}
+	}
+
+	if !ook && nok {
+		if nval == "false" {
+			return
+		} else {
+			GetController().taintNodeNotSchedulable(nl.Name)
+		}
+	}
+
+	if ook && nok {
+		if nval == oval {
+			return
+		} else if nval == "true" {
 			GetController().taintNodeNotSchedulable(nl.Name)
 		} else {
 			GetController().deTaintNodeNotSchedulable(nl.Name)
