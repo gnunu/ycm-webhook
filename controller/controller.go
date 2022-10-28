@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/openyurtio/pkg/controller/poolcoordinator/client"
 	"github.com/openyurtio/pkg/controller/poolcoordinator/constant"
@@ -24,55 +25,91 @@ type Controller struct {
 	leaseLister leaselisterv1.LeaseNamespaceLister
 }
 
-var ctl *Controller
+type LeaseDelegatedCounter struct {
+	v    map[string]int
+	lock sync.RWMutex
+}
+
+var (
+	ctl *Controller
+
+	ldc *LeaseDelegatedCounter
+)
+
+func (dc *LeaseDelegatedCounter) Inc(name string) {
+	dc.lock.Lock()
+	defer dc.lock.Unlock()
+
+	if dc.v[name] >= constant.LeaseDelegationThreshold {
+		return
+	}
+	dc.v[name] += 1
+}
+
+func (dc *LeaseDelegatedCounter) Dec(name string) {
+	dc.lock.Lock()
+	defer dc.lock.Unlock()
+
+	if dc.v[name] > 0 {
+		dc.v[name] -= 1
+	}
+}
+
+func (dc *LeaseDelegatedCounter) Reset(name string) {
+	dc.lock.Lock()
+	defer dc.lock.Unlock()
+
+	dc.v[name] = 0
+}
+
+func (dc *LeaseDelegatedCounter) Touch(name string) {
+	dc.lock.Lock()
+	defer dc.lock.Unlock()
+
+	if _, ok := dc.v[name]; !ok {
+		dc.Reset(name)
+	}
+}
+
+func (dc *LeaseDelegatedCounter) Counter(name string) int {
+	dc.lock.RLock()
+	defer dc.lock.Unlock()
+
+	return dc.v[name]
+}
 
 func onLeaseCreate(n interface{}) {
 	nl := n.(*coordv1.Lease)
 	//klog.Infof("new lease: %v\n", nl)
+	ldc.Reset(nl.Name)
 
 	if val, ok := nl.Annotations[constant.DelegateHeartBeat]; ok {
 		if val == "true" {
-			GetController().taintNodeNotSchedulable(nl.Name)
+			ldc.Inc(nl.Name)
 		}
 	}
 }
 
 func onLeaseUpdate(o interface{}, n interface{}) {
-	ol := o.(*coordv1.Lease)
+	//ol := o.(*coordv1.Lease)
 	nl := n.(*coordv1.Lease)
 	//klog.Infof("updated lease: %v\n", nl)
 
-	oval, ook := ol.Annotations[constant.DelegateHeartBeat]
+	ldc.Touch(nl.Name)
+
+	//oval, ook := ol.Annotations[constant.DelegateHeartBeat]
 	nval, nok := nl.Annotations[constant.DelegateHeartBeat]
 
-	if !ook && !nok {
-		return
-	}
-
-	if ook && !nok {
-		if oval != "true" {
-			return
-		} else {
-			GetController().deTaintNodeNotSchedulable(nl.Name)
-		}
-	}
-
-	if !ook && nok {
-		if nval != "true" {
-			return
-		} else {
+	if nok && nval == "true" {
+		ldc.Inc(nl.Name)
+		if ldc.Counter(nl.Name) >= constant.LeaseDelegationThreshold {
 			GetController().taintNodeNotSchedulable(nl.Name)
 		}
-	}
-
-	if ook && nok {
-		if nval == oval {
-			return
-		} else if nval == "true" {
-			GetController().taintNodeNotSchedulable(nl.Name)
-		} else {
+	} else {
+		if ldc.Counter(nl.Name) >= constant.LeaseDelegationThreshold {
 			GetController().deTaintNodeNotSchedulable(nl.Name)
 		}
+		ldc.Reset(nl.Name)
 	}
 }
 
@@ -133,6 +170,10 @@ func (nc *Controller) Run() {
 	stopCH := make(chan (struct{}))
 	stopper := make(chan (struct{}))
 	defer close(stopper)
+	ldc = &LeaseDelegatedCounter{
+		v: make(map[string]int),
+	}
+
 	klog.Info("create lease lister")
 	nc.leaseLister = lister.CreateLeaseLister(nc.client, stopper, onLeaseCreate, onLeaseUpdate, nil)
 	klog.Info("create node lister")

@@ -64,14 +64,14 @@ func (pv *PodAdmission) userIsNodeController() bool {
 	return strings.Contains(pv.request.UserInfo.Username, "system:serviceaccount:kube-system:node-controller")
 }
 
-func (pv *PodAdmission) NodeIsInAutonomy(node *corev1.Node) bool {
+func (pv *PodAdmission) nodeIsInAutonomy(node *corev1.Node) bool {
 	if node.Annotations != nil && node.Annotations[constant.AnnotationKeyNodeAutonomy] == "true" {
 		return true
 	}
 	return false
 }
 
-func (pv *PodAdmission) NodeIsAlive(node *corev1.Node) bool {
+func (pv *PodAdmission) nodeIsAlive(node *corev1.Node) bool {
 	lease, err := leaseLister.Get(node.Name)
 	if err != nil {
 		klog.Error(err)
@@ -92,7 +92,7 @@ func (pv *PodAdmission) getNode() error {
 	return err
 }
 
-func (pv *PodAdmission) ValidateReview() (*admissionv1.AdmissionReview, error) {
+func (pv *PodAdmission) validateReview() (*admissionv1.AdmissionReview, error) {
 	if pv.request.Kind.Kind != "Pod" {
 		err := fmt.Errorf("only pods are supported here")
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, ""), err
@@ -134,7 +134,7 @@ func (pv *PodAdmission) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if pv.userIsNodeController() {
 			// node is autonomy annotated
-			if pv.NodeIsInAutonomy(pv.node) {
+			if pv.nodeIsInAutonomy(pv.node) {
 				return validation{Valid: false, Reason: msgNodeAutonomy}, nil
 			}
 
@@ -145,7 +145,7 @@ func (pv *PodAdmission) validateDel() (validation, error) {
 				}
 
 				if pv.pod.Annotations[constant.PodAvailableAnnotation] == "pool" {
-					if pv.NodeIsAlive(pv.node) {
+					if pv.nodeIsAlive(pv.node) {
 						return validation{Valid: false, Reason: msgPodAvailablePoolAndNodeIsAlive}, nil
 					} else {
 						return validation{Valid: true, Reason: msgPodAvailablePoolAndNodeIsNotAlive}, nil
@@ -157,7 +157,7 @@ func (pv *PodAdmission) validateDel() (validation, error) {
 	return validation{Valid: true, Reason: msgPodDeleteValidated}, nil
 }
 
-func (pv *PodAdmission) MutateAddToleration() ([]byte, error) {
+func (pv *PodAdmission) mutateAddToleration() ([]byte, error) {
 	toadd := []corev1.Toleration{
 		{Key: "node.kubernetes.io/unreachable",
 			Operator: "Exists",
@@ -189,7 +189,7 @@ func (pv *PodAdmission) MutateAddToleration() ([]byte, error) {
 	return patchb, nil
 }
 
-func (pv *PodAdmission) MutateReview() (*admissionv1.AdmissionReview, error) {
+func (pv *PodAdmission) mutateReview() (*admissionv1.AdmissionReview, error) {
 	if pv.request.Kind.Kind != "Pod" {
 		err := fmt.Errorf("only pods are supported here")
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, ""), err
@@ -211,7 +211,7 @@ func (pv *PodAdmission) MutateReview() (*admissionv1.AdmissionReview, error) {
 	}
 
 	// add tolerations if not yet
-	val, err := pv.MutateAddToleration()
+	val, err := pv.mutateAddToleration()
 	if err != nil {
 		return reviewResponse(pv.request.UID, true, http.StatusAccepted, "could not merge tolerations"), err
 	}
@@ -258,13 +258,13 @@ func patchReviewResponse(uid types.UID, patch []byte) (*admissionv1.AdmissionRev
 }
 
 // ServeHealth returns 200 when things are good
-func ServeHealth(w http.ResponseWriter, r *http.Request) {
+func serveHealth(w http.ResponseWriter, r *http.Request) {
 	klog.Info("uri", r.RequestURI)
 	fmt.Fprint(w, "OK")
 }
 
 // ServeValidatePods validates an admission request and then writes an admission
-func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
+func serveValidatePods(w http.ResponseWriter, r *http.Request) {
 	klog.Info("uri", r.RequestURI)
 	klog.Info("received validation request")
 
@@ -283,7 +283,7 @@ func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
 	klog.Infof("name: %s, namespace: %s, operation: %s, from: %v",
 		in.Request.Name, in.Request.Namespace, in.Request.Operation, &in.Request.UserInfo)
 
-	out, err := pv.ValidateReview()
+	out, err := pv.validateReview()
 
 	if err != nil {
 		e := fmt.Sprintf("could not generate admission response: %v", err)
@@ -307,7 +307,7 @@ func ServeValidatePods(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeMutatePods mutates an admission request and then writes an admission
-func ServeMutatePods(w http.ResponseWriter, r *http.Request) {
+func serveMutatePods(w http.ResponseWriter, r *http.Request) {
 	klog.Info("uri", r.RequestURI)
 	klog.Info("received validation request")
 
@@ -326,7 +326,7 @@ func ServeMutatePods(w http.ResponseWriter, r *http.Request) {
 	klog.Infof("name: %s, namespace: %s, operation: %s, from: %v",
 		in.Request.Name, in.Request.Namespace, in.Request.Operation, &in.Request.UserInfo)
 
-	out, err := pv.MutateReview()
+	out, err := pv.mutateReview()
 
 	if err != nil {
 		e := fmt.Sprintf("could not generate admission response: %v", err)
@@ -385,9 +385,9 @@ func Run(nLister listerv1.NodeLister, lLister leaselisterv1.LeaseNamespaceLister
 	nodeLister = nLister
 	leaseLister = lLister
 
-	http.HandleFunc(ValidatePath, ServeValidatePods)
-	http.HandleFunc(MutatePath, ServeMutatePods)
-	http.HandleFunc(HealthPath, ServeHealth)
+	http.HandleFunc(ValidatePath, serveValidatePods)
+	http.HandleFunc(MutatePath, serveMutatePods)
+	http.HandleFunc(HealthPath, serveHealth)
 
 	err := utils.EnsureDir(CertDir)
 	if err != nil {
