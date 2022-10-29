@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/openyurtio/pkg/controller/poolcoordinator/client"
@@ -13,6 +12,7 @@ import (
 	coordv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	leaselisterv1 "k8s.io/client-go/listers/coordination/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
@@ -23,6 +23,7 @@ type Controller struct {
 	client      *kubernetes.Clientset
 	nodeLister  listerv1.NodeLister
 	leaseLister leaselisterv1.LeaseNamespaceLister
+	nodepoolMap *utils.NodepoolMap
 }
 
 type LeaseDelegatedCounter struct {
@@ -113,6 +114,42 @@ func onLeaseUpdate(o interface{}, n interface{}) {
 	}
 }
 
+func onNodeCreate(n interface{}) {
+	node := n.(*corev1.Node)
+	pool, ok := utils.NodeNodepool(node)
+	if ok {
+		GetController().nodepoolMap.Add(pool, node.Name)
+	}
+}
+
+func onNodeDelete(n interface{}) {
+	node := n.(*corev1.Node)
+	pool, ok := utils.NodeNodepool(node)
+	if ok {
+		GetController().nodepoolMap.Del(pool, node.Name)
+	}
+}
+
+func onNodeUpdate(o interface{}, n interface{}) {
+	on := o.(*corev1.Node)
+	nn := n.(*corev1.Node)
+	opool, ook := utils.NodeNodepool(on)
+	npool, nok := utils.NodeNodepool(nn)
+	if !ook && !nok {
+		return
+	}
+	if !ook && nok {
+		GetController().nodepoolMap.Add(npool, nn.Name)
+	} else if ook && !nok {
+		GetController().nodepoolMap.Del(opool, on.Name)
+	} else {
+		if opool != npool {
+			GetController().nodepoolMap.Del(opool, on.Name)
+			GetController().nodepoolMap.Add(npool, nn.Name)
+		}
+	}
+}
+
 func GetController() *Controller {
 	if ctl == nil {
 		ctl = &Controller{
@@ -177,10 +214,15 @@ func (nc *Controller) Run() {
 	klog.Info("create lease lister")
 	nc.leaseLister = lister.CreateLeaseLister(nc.client, stopper, onLeaseCreate, onLeaseUpdate, nil)
 	klog.Info("create node lister")
-	nc.nodeLister = lister.CreateNodeLister(nc.client, stopper, nil, nil, nil)
+	nc.nodeLister = lister.CreateNodeLister(nc.client, stopper, onNodeCreate, onNodeUpdate, onNodeDelete)
+	klog.Info("create nodepool map")
+	nc.nodepoolMap = utils.NewNodepoolMap()
+	nl, err := nc.nodeLister.List(labels.Everything())
+	if err != nil {
+		klog.Error(err)
+	}
+	nc.nodepoolMap.Sync(nl)
 	klog.Info("create webhook")
-	go webhook.Run(nc.nodeLister, nc.leaseLister)
-	n, _ := nc.nodeLister.Get("ai-ice-vm31")
-	fmt.Printf("%v\n", n)
+	go webhook.Run(nc.nodeLister, nc.leaseLister, nc.nodepoolMap)
 	<-stopCH
 }

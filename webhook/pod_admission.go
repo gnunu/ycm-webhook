@@ -28,6 +28,8 @@ const (
 	msgPodAvailablePoolAndNodeIsAlive    string = "node is actually alive in a pool, eviction aborted"
 	msgPodAvailablePoolAndNodeIsNotAlive string = "node is not alive in a pool, eviction approved"
 	msgPodDeleteValidated                string = "pod deletion validated"
+	msgPoolHasTooFewNodes                string = "nodepool has too few nodes"
+	msgPoolHasTooFewReadyNodes           string = "nodepool has too few ready nodes"
 )
 
 var (
@@ -37,6 +39,7 @@ var (
 
 	nodeLister  listerv1.NodeLister
 	leaseLister leaselisterv1.LeaseNamespaceLister
+	nodepoolMap *utils.NodepoolMap
 )
 
 type validation struct {
@@ -62,26 +65,6 @@ func (pv *PodAdmission) getPod() error {
 
 func (pv *PodAdmission) userIsNodeController() bool {
 	return strings.Contains(pv.request.UserInfo.Username, "system:serviceaccount:kube-system:node-controller")
-}
-
-func (pv *PodAdmission) nodeIsInAutonomy(node *corev1.Node) bool {
-	if node.Annotations != nil && node.Annotations[constant.AnnotationKeyNodeAutonomy] == "true" {
-		return true
-	}
-	return false
-}
-
-func (pv *PodAdmission) nodeIsAlive(node *corev1.Node) bool {
-	lease, err := leaseLister.Get(node.Name)
-	if err != nil {
-		klog.Error(err)
-		return false
-	}
-	diff := time.Now().Sub(lease.GetCreationTimestamp().Time)
-	if diff.Seconds() > 40 {
-		return false
-	}
-	return true
 }
 
 func (pv *PodAdmission) getNode() error {
@@ -134,7 +117,7 @@ func (pv *PodAdmission) validateDel() (validation, error) {
 	if pv.request.Operation == admissionv1.Delete {
 		if pv.userIsNodeController() {
 			// node is autonomy annotated
-			if pv.nodeIsInAutonomy(pv.node) {
+			if utils.NodeIsInAutonomy(pv.node) {
 				return validation{Valid: false, Reason: msgNodeAutonomy}, nil
 			}
 
@@ -145,9 +128,18 @@ func (pv *PodAdmission) validateDel() (validation, error) {
 				}
 
 				if pv.pod.Annotations[constant.PodAvailableAnnotation] == "pool" {
-					if pv.nodeIsAlive(pv.node) {
+					if utils.NodeIsAlive(leaseLister, pv.node.Name) {
 						return validation{Valid: false, Reason: msgPodAvailablePoolAndNodeIsAlive}, nil
 					} else {
+						pool, ok := utils.NodeNodepool(pv.node)
+						if ok {
+							if nodepoolMap.Count(pool) < 3 {
+								return validation{Valid: false, Reason: msgPoolHasTooFewNodes}, nil
+							}
+							if float32(utils.CountAliveNode(leaseLister, nodepoolMap.Nodes(pool)))/float32(nodepoolMap.Count(pool)) < constant.PoolAliveNodeRatio {
+								return validation{Valid: false, Reason: msgPoolHasTooFewReadyNodes}, nil
+							}
+						}
 						return validation{Valid: true, Reason: msgPodAvailablePoolAndNodeIsNotAlive}, nil
 					}
 				}
@@ -381,7 +373,7 @@ const (
 	CertDir string = "/tmp/k8s-webhook-server/serving-certs"
 )
 
-func Run(nLister listerv1.NodeLister, lLister leaselisterv1.LeaseNamespaceLister) {
+func Run(nLister listerv1.NodeLister, lLister leaselisterv1.LeaseNamespaceLister, npm *utils.NodepoolMap) {
 	nodeLister = nLister
 	leaseLister = lLister
 
@@ -409,6 +401,8 @@ func Run(nLister listerv1.NodeLister, lLister leaselisterv1.LeaseNamespaceLister
 	client := client.GetClientFromCluster()
 	stopper := make(chan (struct{}))
 	nodeLister = lister.CreateNodeLister(client, stopper, nil, nil, nil)
+
+	nodepoolMap = npm
 
 	klog.Info("Listening on port 443...")
 	klog.Fatal(http.ListenAndServeTLS(":443", cert, key, nil))

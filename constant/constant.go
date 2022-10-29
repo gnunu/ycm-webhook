@@ -13,4 +13,6 @@ const (
 	DelegateHeartBeat = "openyurt.io/delegate-heartbeat"
 
 	LeaseDelegationThreshold = 4
+
+	PoolAliveNodeRatio = 0.3
 )
