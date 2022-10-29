@@ -31,13 +31,15 @@ func (ns *NodeSet) Add(name string) {
 }
 
 func (ns *NodeSet) Del(name string) {
-	for _, n := range ns.nodes {
+	for i, n := range ns.nodes {
 		if n == name {
+			copy(ns.nodes[i:], ns.nodes[i+1:])
+			ns.nodes[ns.cnt-1] = ""
+			ns.nodes = ns.nodes[:ns.cnt-1]
+			ns.cnt--
 			return
 		}
 	}
-	ns.nodes = append(ns.nodes, name)
-	ns.cnt--
 }
 
 func (ns *NodeSet) Count() int {
