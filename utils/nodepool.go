@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openyurtio/pkg/controller/poolcoordinator/constant"
+	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/constant"
 	corev1 "k8s.io/api/core/v1"
 	leaselisterv1 "k8s.io/client-go/listers/coordination/v1"
 	"k8s.io/klog/v2"

@@ -1,14 +1,14 @@
-package controller
+package poolcoordinator
 
 import (
 	"context"
 	"sync"
 
-	"github.com/openyurtio/pkg/controller/poolcoordinator/client"
-	"github.com/openyurtio/pkg/controller/poolcoordinator/constant"
-	"github.com/openyurtio/pkg/controller/poolcoordinator/lister"
-	"github.com/openyurtio/pkg/controller/poolcoordinator/utils"
-	"github.com/openyurtio/pkg/controller/poolcoordinator/webhook"
+	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/client"
+	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/constant"
+	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/lister"
+	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/utils"
+	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/webhook"
 	coordv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,6 +148,10 @@ func onNodeUpdate(o interface{}, n interface{}) {
 			GetController().nodepoolMap.Add(npool, nn.Name)
 		}
 	}
+}
+
+func NewController() *Controller {
+	return GetController()
 }
 
 func GetController() *Controller {

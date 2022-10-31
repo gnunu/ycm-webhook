@@ -1,4 +1,4 @@
-module github.com/openyurtio/pkg/controller/poolcoordinator
+module github.com/openyurtio/openyurt/pkg/controller/poolcoordinator
 
 go 1.17
 
