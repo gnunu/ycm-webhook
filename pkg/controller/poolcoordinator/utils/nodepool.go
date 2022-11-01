@@ -6,54 +6,19 @@ import (
 
 	"github.com/openyurtio/openyurt/pkg/controller/poolcoordinator/constant"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	leaselisterv1 "k8s.io/client-go/listers/coordination/v1"
 	"k8s.io/klog/v2"
 )
 
-type NodeSet struct {
-	nodes []string
-	cnt   int
-}
-
 type NodepoolMap struct {
-	nodepools map[string]*NodeSet
+	nodepools map[string]sets.String
 	lock      sync.Mutex
-}
-
-func (ns *NodeSet) Add(name string) {
-	for _, n := range ns.nodes {
-		if n == name {
-			return
-		}
-	}
-	ns.nodes = append(ns.nodes, name)
-	ns.cnt++
-}
-
-func (ns *NodeSet) Del(name string) {
-	for i, n := range ns.nodes {
-		if n == name {
-			copy(ns.nodes[i:], ns.nodes[i+1:])
-			ns.nodes[ns.cnt-1] = ""
-			ns.nodes = ns.nodes[:ns.cnt-1]
-			ns.cnt--
-			return
-		}
-	}
-}
-
-func (ns *NodeSet) Count() int {
-	return ns.cnt
-}
-
-// return count of active node
-func (ns *NodeSet) Nodes() []string {
-	return ns.nodes
 }
 
 func NewNodepoolMap() *NodepoolMap {
 	return &NodepoolMap{
-		nodepools: make(map[string]*NodeSet),
+		nodepools: make(map[string]sets.String),
 	}
 }
 
@@ -62,9 +27,9 @@ func (m *NodepoolMap) Add(pool, node string) {
 	defer m.lock.Unlock()
 
 	if m.nodepools[pool] == nil {
-		m.nodepools[pool] = &NodeSet{}
+		m.nodepools[pool] = sets.String{}
 	}
-	m.nodepools[pool].Add(node)
+	m.nodepools[pool].Insert(node)
 }
 
 func (m *NodepoolMap) Del(pool, node string) {
@@ -75,22 +40,22 @@ func (m *NodepoolMap) Del(pool, node string) {
 		return
 	}
 
-	m.nodepools[pool].Del(node)
-	if m.nodepools[pool].Count() == 0 {
+	m.nodepools[pool].Delete(node)
+	if m.nodepools[pool].Len() == 0 {
 		delete(m.nodepools, pool)
 	}
 }
 
 func (m *NodepoolMap) Count(pool string) int {
 	if m.nodepools[pool] != nil {
-		return m.nodepools[pool].Count()
+		return m.nodepools[pool].Len()
 	}
 	return 0
 }
 
 func (m *NodepoolMap) Nodes(pool string) []string {
 	if m.nodepools[pool] != nil {
-		return m.nodepools[pool].Nodes()
+		return m.nodepools[pool].UnsortedList()
 	}
 	return []string{}
 }
@@ -117,7 +82,7 @@ func NodeIsAlive(leaseLister leaselisterv1.LeaseNamespaceLister, nodeName string
 		klog.Error(err)
 		return false
 	}
-	diff := time.Now().Sub(lease.GetCreationTimestamp().Time)
+	diff := time.Now().Sub(lease.Spec.RenewTime.Time)
 	if diff.Seconds() > 40 {
 		return false
 	}

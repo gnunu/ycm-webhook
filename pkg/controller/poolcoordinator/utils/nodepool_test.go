@@ -2,19 +2,9 @@ package utils
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 )
-
-func TestNodeSet(t *testing.T) {
-	ns := &NodeSet{}
-	ns.Add("node1")
-	ns.Add("node2")
-	nodes := ns.Nodes()
-	expected := []string{"node1", "node2"}
-	if !reflect.DeepEqual(nodes, expected) {
-		t.Errorf("expect %v, but %v returned", expected, nodes)
-	}
-}
 
 func TestNodeMap(t *testing.T) {
 	nm := NewNodepoolMap()
@@ -35,6 +25,7 @@ func TestNodeMap(t *testing.T) {
 		t.Errorf("expect %v, but %v returned", 2, nm.Count("pool2"))
 	}
 	nodes := nm.Nodes("pool2")
+	sort.Sort(sort.StringSlice(nodes))
 	expected := []string{"node3", "node5"}
 	if !reflect.DeepEqual(nodes, expected) {
 		t.Errorf("expect %v, but %v returned", expected, nodes)

@@ -198,7 +198,8 @@ func (pv *PodAdmission) mutateReview() (*admissionv1.AdmissionReview, error) {
 		return reviewResponse(pv.request.UID, false, http.StatusBadRequest, e), err
 	}
 
-	if pv.pod.Annotations == nil || pv.pod.Annotations[constant.PodAvailableAnnotation] != "true" {
+	if !utils.NodeIsInAutonomy(pv.node) &&
+		(pv.pod.Annotations == nil || pv.pod.Annotations[constant.PodAvailableAnnotation] != constant.PodAvailableNode) {
 		return reviewResponse(pv.request.UID, true, http.StatusAccepted, "no need of mutation"), nil
 	}
 
